@@ -127,11 +127,28 @@ h2.ttl{font-size:17px;font-weight:600;margin:var(--s4) var(--s3) var(--s2)}
 
 /* --- nav --- */
 nav{position:fixed;bottom:0;left:0;right:0;max-width:520px;margin:0 auto;
-  display:grid;grid-template-columns:repeat(4,1fr);background:var(--paper);
+  display:grid;grid-template-columns:repeat(5,1fr);background:var(--paper);
   border-top:1px solid var(--line);padding-bottom:env(safe-area-inset-bottom);z-index:30}
-nav button{padding:9px 0 11px;display:grid;justify-items:center;gap:2px;color:var(--ink-3);font-size:11px}
+nav button{padding:9px 0 11px;display:grid;justify-items:center;gap:2px;color:var(--ink-3);font-size:10px}
 nav button.on{color:var(--ink)}
-nav button svg{width:21px;height:21px;stroke:currentColor;fill:none;stroke-width:1.7;stroke-linecap:round;stroke-linejoin:round}
+nav button svg{width:20px;height:20px;stroke:currentColor;fill:none;stroke-width:1.7;stroke-linecap:round;stroke-linejoin:round}
+
+/* --- ประวัติ --- */
+.day{margin-bottom:10px}
+.day .hd{display:flex;align-items:center;gap:8px;padding:12px var(--s3);cursor:pointer}
+.day .hd .d{font-weight:600;font-size:15px}
+.day .hd .n{font-size:12px;color:var(--ink-3)}
+.day .hd .amt{margin-left:auto;font-weight:600;font-size:16px}
+.day .bd{border-top:1px solid var(--line);padding:4px 0}
+.day .split{height:4px;border-radius:2px;background:var(--line);overflow:hidden;
+  display:flex;padding:0}
+.day .split i{display:block;height:100%}
+.hsum{display:grid;grid-template-columns:repeat(3,1fr);gap:1px;background:var(--line);
+  border-radius:var(--r);overflow:hidden;margin-bottom:14px}
+.hsum div{background:var(--card);padding:10px 8px;text-align:center}
+.hsum b{display:block;font-size:16px;font-weight:600}
+.hsum span{font-size:11px;color:var(--ink-3)}
+.hmore{text-align:center;padding:18px 0 34px;font-size:13px;color:var(--ink-3)}
 
 /* --- sheet / lock --- */
 .sheet{position:fixed;inset:0;background:rgba(34,34,34,.32);z-index:60;display:flex;align-items:flex-end}
@@ -174,7 +191,9 @@ const esc = s => String(s??'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>'
 const B = st => (st/100);                                   // สตางค์ → บาท
 const money = st => B(st).toLocaleString('th-TH',{maximumFractionDigits:2});
 const clock = ts => new Date(ts).toLocaleTimeString('th-TH',{hour:'2-digit',minute:'2-digit'});
-const today = () => new Date().toISOString().slice(0,10);
+const p2    = n => String(n).padStart(2,'0');
+const dayOf = d => d.getFullYear()+'-'+p2(d.getMonth()+1)+'-'+p2(d.getDate());
+const today = () => dayOf(new Date());              // local day, not UTC
 const buzz = ms => navigator.vibrate && navigator.vibrate(ms||14);
 const dur = ms => { const m=Math.floor(ms/60000); return Math.floor(m/60)+'ชม '+(m%60)+'น'; };
 
@@ -195,6 +214,8 @@ const SEED_GOODS = [
   ['ถ้วยน้ำจิ้ม','ของใช้','pcs',1000,25000],['ถุงมือ','ของใช้','pcs',100,5000]
 ];
 
+const SB_DEFAULT = {url:'https://mqteglbrvtrlaxwlokap.supabase.co',
+                    key:'sb_publishable_UXHxwYGn2NO_wP7U_WgCZA_2aEhWtvw'};
 let MODE='live', S=null, U=null, route='sell', sheet=null;
 const KEY = m => 'rap.'+m;
 
@@ -211,13 +232,17 @@ function blank(){
     stores:['แม็คโคร','บิ๊กซี'],
     staff:[{pin:'1111',name:'เต๋',test:false},{pin:'2222',name:'เพื่อน',test:false},
            {pin:'3333',name:'ทดสอบ 1',test:true},{pin:'4444',name:'ทดสอบ 2',test:true}],
-    sb:{url:'',key:''},outbox:[],pulled:null,seeded:Date.now()};
+    sb:{url:SB_DEFAULT.url,key:SB_DEFAULT.key},buyDraft:null,
+    outbox:[],pulled:null,pulledAt:null,seeded:Date.now()};
 }
 function load(){
   S=null;
   try{ S = JSON.parse(localStorage[KEY(MODE)]) }catch(e){}
   if(!S || !S.items){ S = blank(); save(); }
   if(MODE==='test' && S.seeded && Date.now()-S.seeded > 7*864e5){ S=blank(); save(); }
+  if(!S.sb || !S.sb.url){ S.sb={url:SB_DEFAULT.url,key:SB_DEFAULT.key}; save(); }
+  buyDraft = S.buyDraft || null;
+  HIST.days=[]; HIST.done=false; HIST.err=null; HIST.open=null; HIST.detail={}; HIST.key=null;
   document.body.classList.toggle('test',MODE==='test');
   $('#tflag').classList.toggle('hide',MODE!=='test');
 }
@@ -349,7 +374,7 @@ async function flush(){
       const job = S.outbox[0];
       const r = await fetch(`${S.sb.url}/rest/v1/${job.table}`,{method:'POST',headers:{
         apikey:S.sb.key,Authorization:'Bearer '+S.sb.key,'Content-Type':'application/json',
-        'Content-Profile':'rap',Prefer:'resolution=merge-duplicates,return=minimal'
+        Prefer:'resolution=merge-duplicates,return=minimal'
       },body:JSON.stringify(job.row)});
       if(!r.ok && r.status!==409) throw new Error(await r.text());
       S.outbox.shift(); save();
@@ -361,13 +386,33 @@ async function pull(){
   if(!S.sb.url || !S.sb.key || !navigator.onLine) return;
   const get = async (t,q='') => {
     const r = await fetch(`${S.sb.url}/rest/v1/${t}?select=*${q}`,{headers:{
-      apikey:S.sb.key,Authorization:'Bearer '+S.sb.key,'Accept-Profile':'rap'}});
+      apikey:S.sb.key,Authorization:'Bearer '+S.sb.key}});
     return r.ok ? r.json() : [];
   };
   try{
     const test = MODE==='test';
-    const [sh,sa,pc] = await Promise.all([
-      get(T.shifts,`&is_test=eq.${test}`), get(T.sales,`&is_test=eq.${test}`), get(T.pays)]);
+    /* incremental: after the first sync we only ask for what changed */
+    const since = S.pulledAt ? `&updated_at=gt.${encodeURIComponent(S.pulledAt)}` : '';
+    const at    = new Date().toISOString();
+    const [sh,sa,pc,it,ct,gd] = await Promise.all([
+      get(T.shifts,`&is_test=eq.${test}${since}`),
+      get(T.sales ,`&is_test=eq.${test}${since}`),
+      get(T.pays  , S.pulledAt ? `&created_at=gt.${encodeURIComponent(S.pulledAt)}` : ''),
+      get('items',`&order=sort`), get('cats',`&order=sort`), get('goods',`&archived=eq.false`)]);
+    /* shared catalog — MERGE by id, never replace the array. Dropping a
+       local row would orphan every old sale that points at it. */
+    const mergeCat=(local,remote,map)=>remote.forEach(r=>{
+      const i=local.findIndex(x=>x.id===r.id);
+      if(i<0) local.push(map(r,null)); else Object.assign(local[i],map(r,local[i]));
+    });
+    mergeCat(S.items,it,(r,cur)=>({id:r.id,name:r.name,price:r.price,sort:r.sort,
+      photo:(cur&&cur.photo)||'',active:r.active}));          // รูปเก็บไว้ในเครื่อง
+    mergeCat(S.cats ,ct,r=>({id:r.id,name:r.name,bucket:r.bucket,sort:r.sort}));
+    mergeCat(S.goods,gd,(r,cur)=>({id:r.id,name:r.name,category_id:r.category_id,
+      item_id:r.item_id,unit:r.unit,pack_size:r.pack_size,last_price:r.last_price,
+      last_store:r.last_store||'',archived:false,low_stock:cur?cur.low_stock:false}));
+    /* first ever sync from this phone: its catalog becomes the shop's */
+    if(!S.pulledAt) pushCatalog();
     const mergeById=(local,remote,map)=>{const have=new Set(local.map(x=>x.id));
       remote.forEach(r=>{if(!have.has(r.id)) local.push(map(r))});};
     mergeById(S.shifts,sh,r=>({id:r.id,opened_at:+new Date(r.opened_at),
@@ -377,10 +422,264 @@ async function pull(){
       item_name:r.item_name,price:r.price,pay:r.pay,void_of:r.void_of,
       device:r.device,ts:+new Date(r.created_at)}));
     mergeById(S.pays,pc,r=>({id:r.id,sale_id:r.sale_id,pay:r.pay}));
-    S.pulled=Date.now(); save(); paint();
+    S.pulled=Date.now(); S.pulledAt=at; save(); paint();
   }catch(e){ console.warn('pull',e.message) }
 }
-addEventListener('online',()=>{flush();pull()});
+addEventListener('online',()=>{flush();pull();pullList()});
+
+/* ═══════════════ 3b · shared shopping list ═══════════════ */
+/* ซื้อของ used to live in a bare `let` — one refresh and the whole list
+   was gone. It is now stored in S (so it survives reload) and mirrored to
+   public.shopping_list (so every phone in the shop sees the same ticks). */
+const slid = gid => 'sl_'+(MODE==='test'?'t':'l')+'_'+gid;
+
+/* the phones own the catalog; the server just mirrors it so a second
+   phone starts with the real menu instead of the factory seed */
+function pushCatalog(){
+  S.cats .forEach(c=>queue('cats' ,{id:c.id,name:c.name,bucket:c.bucket,sort:c.sort}));
+  S.items.forEach(i=>queue('items',{id:i.id,name:i.name,price:i.price,sort:i.sort,
+    active:i.active}));                                        /* รูปไม่ส่ง — หนักและไม่จำเป็น */
+  S.goods.filter(g=>!g.archived).forEach(g=>queue('goods',{id:g.id,name:g.name,
+    category_id:g.category_id,item_id:g.item_id,unit:g.unit,pack_size:g.pack_size,
+    last_price:g.last_price,last_store:g.last_store||''}));
+  S.stores.forEach((n,i)=>queue('stores',{name:n,sort:i}));
+  S.staff .forEach(p=>queue('staff' ,{pin:p.pin,name:p.name,test:p.test}));
+}
+function sbFetch(path, opt){
+  opt = opt || {};
+  if(!S.sb.url || !S.sb.key) return Promise.reject(new Error('ยังไม่ได้ต่อ Supabase'));
+  const h = Object.assign({apikey:S.sb.key, Authorization:'Bearer '+S.sb.key}, opt.headers||{});
+  return fetch(S.sb.url+'/rest/v1/'+path, Object.assign({}, opt, {headers:h}));
+}
+const upsert = rows => sbFetch('shopping_list',{method:'POST',
+  headers:{'Content-Type':'application/json',
+           Prefer:'resolution=merge-duplicates,return=minimal'},
+  body:JSON.stringify(rows)});
+
+/* persist + broadcast one line change */
+function dsave(gid){
+  if(gid && buyDraft.lines[gid]) buyDraft.lines[gid].t = Date.now();
+  S.buyDraft = buyDraft; save(); pushList(); paint();
+}
+/* a line was unticked here — tell the others */
+function dgone(gid){
+  (buyDraft.off = buyDraft.off || []).push(gid);
+  S.buyDraft = buyDraft; save(); pushList(); paint();
+}
+
+let listBusy=false, listDirty=false;
+async function pushList(){
+  if(!buyDraft || !S.sb.url || !navigator.onLine) return;
+  if(listBusy){ listDirty=true; return; }
+  listBusy=true;
+  try{
+    const test = MODE==='test', rows=[], on=new Set();
+    Object.entries(buyDraft.lines).forEach(([gid,l])=>{
+      const g = S.goods.find(x=>x.id===gid); if(!g) return;
+      on.add(gid);
+      rows.push({id:slid(gid),goods_id:gid,goods_name:g.name,bucket:catOf(g).bucket,
+        item_id:g.item_id,store:buyDraft.store,unit:g.unit,pack_size:g.pack_size,
+        packs:l.packs||1,qty:l.qty==null?null:l.qty,price:l.price==null?null:l.price,
+        checked:true,is_test:test,done_purchase_id:null,updated_by:DEVICE});
+    });
+    (buyDraft.off||[]).forEach(gid=>{
+      if(on.has(gid)) return;
+      const g = S.goods.find(x=>x.id===gid);
+      rows.push({id:slid(gid),goods_id:gid,goods_name:g?g.name:gid,
+        checked:false,is_test:test,updated_by:DEVICE});
+    });
+    if(rows.length) await upsert(rows);
+    buyDraft.off=[]; S.buyDraft=buyDraft; save();
+  }catch(e){ console.warn('list push',e.message) }
+  listBusy=false;
+  if(listDirty){ listDirty=false; pushList(); }
+}
+
+async function pullList(){
+  if(!S.sb.url || !navigator.onLine) return;
+  try{
+    const r = await sbFetch('shopping_list?select=*&done_purchase_id=is.null&is_test=eq.'
+                            +(MODE==='test'));
+    if(!r.ok) return;
+    const rows = await r.json();
+    if(!buyDraft) buyDraft = S.buyDraft || newDraft();
+    const L = buyDraft.lines; let changed=false;
+    rows.forEach(row=>{
+      const gid=row.goods_id; if(!gid) return;
+      const stamp = +new Date(row.updated_at), local = L[gid];
+      if(row.checked){
+        if(!local || stamp > (local.t||0)){
+          L[gid] = {price: row.price==null?0:row.price,
+                    packs: Number(row.packs)||1,
+                    qty:   row.qty==null?undefined:Number(row.qty),
+                    t: stamp};
+          changed = true;
+        }
+      }else if(local && stamp > (local.t||0)){ delete L[gid]; changed = true; }
+    });
+    if(changed){ S.buyDraft=buyDraft; save(); if(route==='buy') paint(); }
+  }catch(e){ console.warn('list pull',e.message) }
+}
+
+/* the list has been turned into a real purchase — close those rows out */
+function markListDone(gids,pid){
+  if(!gids.length || !S.sb.url) return;
+  const test = MODE==='test';
+  upsert(gids.map(gid=>({id:slid(gid),goods_id:gid,
+    goods_name:(S.goods.find(x=>x.id===gid)||{name:gid}).name,
+    checked:false,done_purchase_id:pid,is_test:test,updated_by:DEVICE})))
+    .catch(e=>console.warn('list done',e.message));
+}
+
+/* keep the shared list warm while someone is standing in the shop */
+setInterval(()=>{ if(route==='buy' && !sheet && document.visibilityState==='visible') pullList() },15000);
+document.addEventListener('visibilitychange',()=>{
+  if(document.visibilityState!=='visible' || !S) return;
+  if(route==='buy') pullList();
+  if(route==='hist') loadHist(false);
+});
+
+/* ═══════════════ 3c · ประวัติ — rolled up in Postgres ═══════════════ */
+/* The phone used to reduce over every sale it had ever made. Now it asks
+   day_history() for 14 day-rows and gets 14 day-rows. */
+const HIST={days:[],done:false,busy:false,err:null,open:null,detail:{},key:null,PAGE:14};
+const histKey = () => MODE;
+
+async function loadHist(more){
+  if(HIST.busy) return;
+  if(more && HIST.done) return;
+  HIST.busy=true; HIST.err=null;
+  if(route==='hist') paintFoot();
+  const before = (more && HIST.days.length) ? HIST.days[HIST.days.length-1].day : null;
+  try{
+    const r = await sbFetch('rpc/day_history',{method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({p_is_test:MODE==='test',p_limit:HIST.PAGE,p_before:before})});
+    if(!r.ok) throw new Error('HTTP '+r.status);
+    const rows = await r.json();
+    if(!more){ HIST.days=[]; HIST.done=false; }
+    const have = new Set(HIST.days.map(d=>d.day));
+    rows.forEach(d=>{ if(!have.has(d.day)) HIST.days.push(d) });
+    if(rows.length < HIST.PAGE) HIST.done=true;
+    HIST.key = histKey();
+  }catch(e){
+    HIST.err = e.message;
+    if(!HIST.days.length){ HIST.days = localDays(); HIST.done = true; HIST.key = histKey(); }
+  }
+  HIST.busy=false;
+  if(route==='hist') paint();
+}
+
+/* offline / no-server fallback so the tab is never blank */
+function localDays(){
+  reindex(); const c=costs(); const by={};
+  S.sales.filter(live).forEach(s=>{
+    const k = dayOf(new Date(s.ts));
+    const o = by[k] || (by[k]={day:k,rolls:0,revenue:0,cash:0,transfer:0,unknown:0,
+                              cost:0,shifts:new Set(),names:{}});
+    o.rolls++; o.revenue+=s.price;
+    const p=payOf(s);
+    if(p==='cash') o.cash+=s.price; else if(p==='transfer') o.transfer+=s.price;
+    else o.unknown+=s.price;
+    o.cost += c.sharedPer + (c.topPer[s.item_id]||0);
+    o.shifts.add(s.shift_id);
+    o.names[s.item_name]=(o.names[s.item_name]||0)+1;
+  });
+  return Object.values(by).map(o=>{
+    const top=Object.entries(o.names).sort((a,b)=>b[1]-a[1])[0]||['',0];
+    const cost=Math.round(o.cost);
+    return {day:o.day,rolls:o.rolls,revenue:o.revenue,cash:o.cash,transfer:o.transfer,
+      unknown:o.unknown,cost,profit:o.revenue-cost,shifts:o.shifts.size,
+      top_item:top[0],top_item_n:top[1],_local:true};
+  }).sort((a,b)=> a.day<b.day?1:-1);
+}
+
+async function openDay(iso){
+  if(HIST.open===iso){ HIST.open=null; paint(); return; }
+  HIST.open=iso; paint();
+  if(HIST.detail[iso]) return;
+  try{
+    const r = await sbFetch('rpc/day_detail',{method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({p_day:iso,p_is_test:MODE==='test'})});
+    HIST.detail[iso] = r.ok ? await r.json() : localDetail(iso);
+  }catch(e){ HIST.detail[iso] = localDetail(iso) }
+  if(route==='hist') paint();
+}
+const localDetail = iso => (reindex(), S.sales.filter(s=>live(s) && dayOf(new Date(s.ts))===iso)
+  .sort((a,b)=>b.ts-a.ts)
+  .map(s=>({id:s.id,item_name:s.item_name,price:s.price,pay:payOf(s),
+            created_at:new Date(s.ts).toISOString()})));
+
+const THAI_M=['ม.ค.','ก.พ.','มี.ค.','เม.ย.','พ.ค.','มิ.ย.',
+              'ก.ค.','ส.ค.','ก.ย.','ต.ค.','พ.ย.','ธ.ค.'];
+function dayLabel(iso){
+  const t=dayOf(new Date()), y=dayOf(new Date(Date.now()-864e5));
+  if(iso===t) return 'วันนี้';
+  if(iso===y) return 'เมื่อวาน';
+  const [yy,mm,dd]=iso.split('-').map(Number);
+  return dd+' '+THAI_M[mm-1]+' '+String((yy+543)%100).padStart(2,'0');
+}
+const paintFoot = () => { const f=$('#hfoot'); if(f) f.innerHTML = footHtml() };
+function footHtml(){
+  if(HIST.busy)  return 'กำลังโหลด…';
+  if(HIST.done)  return HIST.days.length ? 'หมดแล้ว · ทั้งหมด '+HIST.days.length+' วัน' : '';
+  return '<button class="chip" data-more="1">โหลดเพิ่ม</button>';
+}
+
+function viewHist(){
+  if(HIST.key !== histKey() && !HIST.busy) loadHist(false);
+  const D=HIST.days;
+  if(!D.length) return `<h2 class="ttl">ประวัติ</h2>`+
+    (HIST.busy?`<p class="note">กำลังโหลด…</p>`:`<p class="note">ยังไม่มีวันที่ขายได้</p>`);
+
+  const tot = D.reduce((a,d)=>({rolls:a.rolls+ +d.rolls, rev:a.rev+ +d.revenue,
+                                profit:a.profit+ +d.profit}),{rolls:0,rev:0,profit:0});
+  const head = `<div class="hsum">
+    <div><b>${D.length}</b><span>วันที่ขาย</span></div>
+    <div><b>${tot.rolls}</b><span>ม้วน</span></div>
+    <div><b>${money(tot.rev)}</b><span>ยอดขาย ฿</span></div></div>`;
+
+  const cards = D.map(d=>{
+    const rev=+d.revenue, cash=+d.cash, tf=+d.transfer, unk=+d.unknown;
+    const pc = n => rev ? (n/rev*100).toFixed(1)+'%' : '0%';
+    const open = HIST.open===d.day;
+    const rows = open ? (HIST.detail[d.day]||[]).slice(0,60).map(s=>
+        `<div class="li" style="border-bottom:0">
+          <span class="t mono" style="color:var(--ink-3);font-size:12px;width:44px">${clock(s.created_at)}</span>
+          <span class="g">${esc(s.item_name)}</span>
+          <span class="mono" style="font-size:11px;color:var(--ink-3)">${
+            s.pay==='transfer'?'โอน':s.pay==='cash'?'สด':'—'}</span>
+          <b style="font-weight:400">${money(s.price)}</b>
+        </div>`).join('') : '';
+    const body = open ? `<div class="bd">
+      <div class="li"><span class="g">เงินสด</span><b>${money(cash)} <small style="color:var(--ink-3)">${pc(cash)}</small></b></div>
+      <div class="li"><span class="g">โอน</span><b>${money(tf)} <small style="color:var(--ink-3)">${pc(tf)}</small></b></div>
+      ${unk?`<div class="li"><span class="g" style="color:var(--pause)">ยังไม่ระบุ</span><b>${money(unk)}</b></div>`:''}
+      <div class="li"><span class="g">ต้นทุนประมาณ</span><b>${money(+d.cost)}</b></div>
+      <div class="li"><span class="g">กำไร</span><b class="pos">${money(+d.profit)}</b></div>
+      ${d.top_item?`<div class="li"><span class="g">ขายดี</span><b style="font-weight:400">${esc(d.top_item)} · ${d.top_item_n}</b></div>`:''}
+      ${rows?`<div class="lbl"><span>รายการ</span><span>${d.rolls} ม้วน</span></div>${rows}`:
+        (HIST.detail[d.day]?'':'<p class="note" style="padding:10px var(--s3) 4px">กำลังโหลด…</p>')}
+    </div>` : '';
+    return `<div class="card day"><div class="hd" data-day="${d.day}">
+        <span class="d">${dayLabel(d.day)}</span>
+        <span class="n">${d.rolls} ม้วน${+d.shifts>1?' · '+d.shifts+' รอบ':''}</span>
+        <span class="amt">${money(rev)}</span>
+      </div>
+      <div class="split" style="margin:0 var(--s3) ${open?'10px':'13px'}">
+        <i style="width:${rev?cash/rev*100:0}%;background:var(--ready)"></i>
+        <i style="width:${rev?tf/rev*100:0}%;background:var(--ink-3)"></i>
+        <i style="width:${rev?unk/rev*100:0}%;background:var(--pause)"></i>
+      </div>${body}</div>`;
+  }).join('');
+
+  const warn = HIST.err && D.some(d=>d._local)
+    ? `<p class="note" style="color:var(--pause)">ออฟไลน์ · คำนวณจากเครื่องนี้</p>` : '';
+  return `<h2 class="ttl">ประวัติ</h2>${warn}${head}${cards}
+    <div class="hmore" id="hfoot">${footHtml()}</div>`;
+}
+
 
 /* ═══════════════ 4 · actions ═══════════════ */
 function openShop(float_start){
@@ -416,6 +715,7 @@ function sell(id){
   queue(T.sales,{id:row.id,shift_id:row.shift_id,item_id:id,item_name:it.name,
     price,pay:'unknown',device:DEVICE,is_test:MODE==='test',
     created_at:new Date(row.ts).toISOString()});
+  HIST.key=null;
   clearTimeout(cust.tm); cust.tm=setTimeout(()=>{cust.ids=[];cust.paid=null;paint()},10000);
 }
 function voidSale(sid){
@@ -441,12 +741,13 @@ const ICON={
   sell:'<path d="M12 5v14M5 12h14"/>',
   buy:'<circle cx="9" cy="20" r="1.4"/><circle cx="18" cy="20" r="1.4"/><path d="M2 3h3l2.6 12.4a1.6 1.6 0 0 0 1.6 1.3h8.4a1.6 1.6 0 0 0 1.6-1.3L21 7H6"/>',
   sum:'<path d="M4 20V10M10 20V4M16 20v-7M22 20H2"/>',
+  hist:'<path d="M3 12a9 9 0 1 0 3-6.7L3 8"/><path d="M3 4v4h4"/><path d="M12 7.5V12l3 2"/>',
   set:'<circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.6 1.6 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.6 1.6 0 0 0-1.8-.3 1.6 1.6 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1A1.6 1.6 0 0 0 9 19.4a1.6 1.6 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.6 1.6 0 0 0 .3-1.8 1.6 1.6 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1A1.6 1.6 0 0 0 4.6 9a1.6 1.6 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.6 1.6 0 0 0 1.8.3H9a1.6 1.6 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.6 1.6 0 0 0 1 1.5 1.6 1.6 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.6 1.6 0 0 0-.3 1.8V9a1.6 1.6 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.6 1.6 0 0 0-1.5 1z"/>'
 };
 function paint(){
   const sh=shift();
   $('#nav').innerHTML=[['sell','ขาย','sell'],['buy','ซื้อของ','buy'],
-    ['sum','สรุป','sum'],['set','ตั้งค่า','set']].map(([r,l,ic])=>
+    ['sum','สรุป','sum'],['hist','ประวัติ','hist'],['set','ตั้งค่า','set']].map(([r,l,ic])=>
     `<button data-go="${r}" class="${route===r?'on':''}">
       <svg viewBox="0 0 24 24">${ICON[ic]}</svg>${l}</button>`).join('');
   $('#chrome').innerHTML = route==='sell' ? barSell(sh) : '';
@@ -454,6 +755,7 @@ function paint(){
     route==='sell' ? (sh?viewSell(sh):viewClosed())
   : route==='buy'  ? (deriveLowStock(),viewBuy())
   : route==='sum'  ? viewSum()
+  : route==='hist' ? viewHist()
   :                  viewSet();
   $('#sheet').innerHTML = sheet ? sheet() : '';
   $('#sheet').classList.toggle('hide',!sheet);
@@ -551,9 +853,9 @@ function viewSell(sh){
 
 /* ── ซื้อของ ── */
 let buyDraft=null;
-function newDraft(){ return {id:uid(),store:S.stores[0],lines:{},total:'',date:today()}; }
+function newDraft(){ return {id:uid(),store:S.stores[0],lines:{},off:[],total:'',date:today()}; }
 function viewBuy(){
-  if(!buyDraft) buyDraft=newDraft();
+  if(!buyDraft){ buyDraft = S.buyDraft || newDraft(); S.buyDraft=buyDraft; save(); }
   const d=buyDraft;
   const storeOptions = ['ทั้งหมด', ...S.stores];
   const stores = storeOptions.map(s=>`<button class="chip ${d.store===s?'on':''}" data-store="${esc(s)}">${esc(s)}</button>`).join('')
@@ -632,20 +934,26 @@ function saveBuy(){
   if(act!==sum) lines.push({id:uid(),goods_id:null,goods_name:'ส่วนต่าง VAT/โปรฯ',
     bucket:'shared',item_id:null,packs:1,pack_size:1,unit:'pcs',price:act-sum,is_promo:false});
   const p={id:d.id,bought_at:d.date,store:d.store,total_actual:act,lines};
-  S.purchases.push(p); buyDraft=newDraft(); save();
+  const bought=Object.keys(d.lines);
+  S.purchases.push(p); buyDraft=newDraft(); S.buyDraft=buyDraft; save();
+  markListDone(bought,p.id);
   queue(T.purchases,{id:p.id,bought_at:p.bought_at,store:p.store,
     total_actual:act,is_test:MODE==='test'});
   /* Gap 7: sync each purchase_line to Supabase */
   lines.forEach(l=>queue('purchase_lines',{id:l.id,purchase_id:p.id,
     goods_id:l.goods_id,goods_name:l.goods_name,bucket:l.bucket,item_id:l.item_id,
     packs:l.packs,pack_size:l.pack_size,unit:l.unit,price:l.price,is_promo:l.is_promo}));
+  lines.forEach(l=>{ if(!l.goods_id) return; const g=S.goods.find(x=>x.id===l.goods_id);
+    if(g) queue('goods',{id:g.id,name:g.name,last_price:g.last_price,last_store:g.last_store}) });
+  HIST.key=null;
   buzz(20); paint();
 }
 function delGoods(gid){
   const g=S.goods.find(x=>x.id===gid);
   if(g){
     g.archived=true;
-    if(buyDraft && buyDraft.lines[gid]) delete buyDraft.lines[gid];
+    queue('goods',{id:g.id,name:g.name,archived:true});
+    if(buyDraft && buyDraft.lines[gid]){ delete buyDraft.lines[gid]; buzz(18); dgone(gid); return; }
     save(); buzz(18); paint();
   }
 }
@@ -828,16 +1136,22 @@ document.addEventListener('click',e=>{
   }
   document.querySelectorAll('.row.sl, .row.sr').forEach(el=>el.classList.remove('sl','sr'));
 
-  const t=e.target.closest('[data-k],[data-go],[data-sell],[data-reenable],[data-note],[data-tf],[data-sheet],[data-sheet2],[data-close-sheet],[data-backdrop],[data-doopen],[data-float],[data-floatx],[data-mtog],[data-mprice],[data-doclose],[data-store],[data-addstore],[data-tick],[data-packs],[data-price],[data-promo],[data-addgoods],[data-delgoods],[data-savebuy],[data-iprice],[data-photo],[data-pin],[data-forget],[data-sbsave],[data-export],[data-lock],[data-paytog],[data-void]');
+  const t=e.target.closest('[data-k],[data-go],[data-sell],[data-reenable],[data-note],[data-tf],[data-sheet],[data-sheet2],[data-close-sheet],[data-backdrop],[data-doopen],[data-float],[data-floatx],[data-mtog],[data-mprice],[data-doclose],[data-store],[data-addstore],[data-tick],[data-packs],[data-price],[data-promo],[data-addgoods],[data-delgoods],[data-savebuy],[data-iprice],[data-photo],[data-pin],[data-forget],[data-sbsave],[data-export],[data-lock],[data-paytog],[data-void],[data-day],[data-more]');
   if(!t) return; const d=t.dataset;
 
   if(d.k!==undefined){ if(d.k==='x') buf=buf.slice(0,-1); else if(buf.length<4) buf+=d.k;
     showLock(); if(buf.length===4) setTimeout(()=>tryPin(buf),90); return; }
   if(d.backdrop!==undefined && e.target===t){ sheet=null; paint(); return; }
   if(d.closeSheet!==undefined){ sheet=null; paint(); return; }
-  if(d.go){ route=d.go; sheet=null; paint(); return; }
+  if(d.go){ route=d.go; sheet=null; paint();
+    if(d.go==='hist' && HIST.key!==histKey()) loadHist(false);
+    if(d.go==='buy') pullList();
+    return; }
   if(d.sheet){ open(d.sheet); return; }
   if(d.sheet2){ open(d.sheet2); return; }
+
+  if(d.day){ openDay(d.day); return; }
+  if(d.more){ loadHist(true); return; }
 
   if(d.sell){ sell(d.sell); return; }
   if(d.delgoods){ delGoods(d.delgoods); return; }
@@ -865,12 +1179,14 @@ document.addEventListener('click',e=>{
   if(d.doclose){ closeShop(Math.round(parseFloat($('#cc').value||0)*100),
                            Math.round(parseFloat($('#tt').value||0)*100)); return; }
 
-  if(d.store){ buyDraft.store=d.store; paint(); return; }
-  if(d.addstore){ const v=prompt('ชื่อร้านใหม่'); if(v){ S.stores.push(v); buyDraft.store=v; save(); paint() } return; }
-  if(d.tick){ const L=buyDraft.lines; if(L[d.tick]) delete L[d.tick];
+  if(d.store){ buyDraft.store=d.store; dsave(); return; }
+  if(d.addstore){ const v=prompt('ชื่อร้านใหม่'); if(v){ S.stores.push(v); buyDraft.store=v; dsave() } return; }
+  if(d.tick){ const L=buyDraft.lines;
+    if(L[d.tick]){ delete L[d.tick]; dgone(d.tick); }
     else { const g=S.goods.find(x=>x.id===d.tick); const isG=g&&g.unit==='g';
-      L[d.tick]={price:g?g.last_price??0:0, packs:isG?1:1, qty:isG?(g.pack_size||500):1} }
-    paint(); return; }
+      L[d.tick]={price:g?g.last_price??0:0, packs:isG?1:1, qty:isG?(g.pack_size||500):1};
+      dsave(d.tick); }
+    return; }
   if(d.packs){ const g=S.goods.find(x=>x.id===d.packs), line=buyDraft.lines[d.packs];
     if(line && g){ const isG=g.unit==='g';
       const curQty = line.qty ?? (isG ? (g.pack_size||500) : (line.packs||1));
@@ -881,7 +1197,7 @@ document.addEventListener('click',e=>{
         if(isG && g.last_price && g.pack_size){
           line.price=Math.round((g.last_price / g.pack_size) * newQty);
         }
-        paint();
+        dsave(d.packs);
       }
     } return; }
   if(d.price){ const g=S.goods.find(x=>x.id===d.price);
@@ -889,7 +1205,7 @@ document.addEventListener('click',e=>{
     const v=prompt(g.name+' — ราคาต่อแพ็ค (บาท)',B(cur));
     if(v!==null){ const st=Math.round(parseFloat(v)*100)||0;
       if(!buyDraft.lines[d.price]) buyDraft.lines[d.price]={price:st,packs:1,promo:false};
-      else buyDraft.lines[d.price].price=st; paint() } return; }
+      else buyDraft.lines[d.price].price=st; dsave(d.price) } return; }
   if(d.addgoods){
     const c=S.cats.find(x=>x.id===d.addgoods);
     const catName=(c?c.name:'').toLowerCase();
@@ -967,7 +1283,10 @@ document.addEventListener('click',e=>{
     const store = (buyDraft && buyDraft.store !== 'ทั้งหมด') ? buyDraft.store : (S.stores[0]||'');
     const g={id:uid(),name:cleanName,category_id:c.id,item_id,unit,pack_size:size,
       last_price:price,last_store:store,archived:false};
-    S.goods.push(g); buyDraft.lines[g.id]={price,packs:1,promo:false}; save(); paint(); return;
+    S.goods.push(g); buyDraft.lines[g.id]={price,packs:1,promo:false};
+    queue('goods',{id:g.id,name:g.name,category_id:g.category_id,item_id:g.item_id,
+      unit:g.unit,pack_size:g.pack_size,last_price:g.last_price,last_store:g.last_store});
+    dsave(g.id); return;
   }
   if(d.savebuy){ saveBuy(); return; }
 
@@ -999,7 +1318,7 @@ function shrink(src,it){
 /* input echo */
 document.addEventListener('input',e=>{
   if(e.target.id==='tot'){                       // อัปเดตแค่บรรทัดส่วนต่าง ไม่ repaint ทั้งหน้า
-    buyDraft.total=e.target.value;
+    buyDraft.total=e.target.value; S.buyDraft=buyDraft; save();
     const sum=Object.values(buyDraft.lines).reduce((a,l)=>a+l.price*l.packs,0);
     const act=buyDraft.total===''?null:Math.round(parseFloat(buyDraft.total||0)*100);
     const gap=act===null?0:act-sum, row=$('#gaprow');
@@ -1038,10 +1357,10 @@ document.addEventListener('click',e=>{
     r.classList.add('sl');
   }else if(r.dataset.gid){
     const gid=r.dataset.gid, L=buyDraft.lines;
-    if(L[gid]) delete L[gid];
+    if(L[gid]){ delete L[gid]; dgone(gid); }
     else { const g=S.goods.find(x=>x.id===gid); const isG=g&&g.unit==='g';
-      L[gid]={price:g?g.last_price??0:0, packs:isG?1:1, qty:isG?(g.pack_size||500):1} }
-    paint();
+      L[gid]={price:g?g.last_price??0:0, packs:isG?1:1, qty:isG?(g.pack_size||500):1};
+      dsave(gid); }
   }
 });
 
@@ -1052,11 +1371,18 @@ document.addEventListener('click',e=>{
   if(rem){ const s=S.staff.find(x=>x.pin===rem.pin);
     if(s){ U={name:s.name,test:s.test};
       if(s.test&&MODE!=='test'){MODE='test';load()} else if(!s.test&&MODE!=='live'){MODE='live';load()}
-      paint(); pull(); if(shift()) wake(); return; } }
+      paint(); pull(); pullList(); if(shift()) wake(); return; } }
   paint(); showLock();
 })();
 if('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catch(()=>{});
 setInterval(()=>{ if(route==='sell'&&shift()&&!sheet) $('#chrome').innerHTML=barSell(shift()) },30000);
+
+/* ประวัติ: load the next page when the footer scrolls into view */
+addEventListener('scroll',()=>{
+  if(route!=='hist' || HIST.busy || HIST.done) return;
+  const f=$('#hfoot'); if(!f) return;
+  if(f.getBoundingClientRect().top < innerHeight + 240) loadHist(true);
+},{passive:true});
 </script>
 </body>
 </html>
