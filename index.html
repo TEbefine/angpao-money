@@ -90,9 +90,9 @@ h2.ttl{font-size:17px;font-weight:600;margin:var(--s4) var(--s3) var(--s2)}
 .row .in .t{font-family:var(--mono);font-size:13px;color:var(--ink-3)}
 .row .in .nm{flex:1;font-size:14px}
 .row .in .pm{font-size:11px;color:var(--ink-3)}
-.row .act{position:absolute;inset:0;display:flex;justify-content:space-between;z-index:1}
-.row .act .l{display:grid;place-items:center;font-size:12px;font-weight:500;width:90px;background:var(--ready-bg);color:var(--ready);cursor:pointer}
-.row .act .r{display:grid;place-items:center;font-size:12px;font-weight:500;width:74px;background:var(--pause-bg);color:var(--pause);cursor:pointer}
+.row .act{position:absolute;inset:0;z-index:1}
+.row .act .l{position:absolute;left:0;top:0;bottom:0;width:90px;display:grid;place-items:center;font-size:12px;font-weight:500;background:var(--ready-bg);color:var(--ready);cursor:pointer}
+.row .act .r{position:absolute;right:0;top:0;bottom:0;width:74px;display:grid;place-items:center;font-size:12px;font-weight:500;background:var(--pause-bg);color:var(--pause);cursor:pointer}
 .row.sl .in{transform:translateX(-74px)}
 .row.sr .in{transform:translateX(90px)}
 
@@ -232,6 +232,38 @@ const netSales = sid => (reindex(), S.sales.filter(s=>s.shift_id===sid && live(s
 const item     = id => S.items.find(i=>i.id===id);
 const catOf    = g => S.cats.find(c=>c.id===g.category_id) || {bucket:'shared',name:'อื่น ๆ'};
 function payOf(s){ const c=S.pays.filter(p=>p.sale_id===s.id).pop(); return c?c.pay:s.pay; }
+function fmtUnit(size, unit){
+  if(unit==='none' || unit==='' || unit===null) return '';
+  if(!unit || unit==='pcs') return size > 1 ? size+' ชิ้น' : '1 แพ็ค';
+  if(unit==='g') return size >= 1000 ? (size/1000)+' กก.' : size+'g';
+  if(unit==='sheet') return size+' แผ่น';
+  return size > 1 ? size+' '+unit : '1 '+unit;
+}
+function parseGoodsName(rawInput, isMeat){
+  let name = (rawInput||'').trim();
+  let unit = isMeat ? 'g' : 'pcs';
+  let size = isMeat ? 1000 : 1;
+  const gMatch = name.match(/(\d+(?:\.\d+)?)\s*(g|กรัม|ก\.?|กก\.?|kg)/i);
+  const sheetMatch = name.match(/(\d+)\s*(แผ่น|sheet)/i);
+  const customUnitMatch = name.match(/(\d+)?\s*(หัว|ถุง|แพ็ค|ชิ้น|กล่อง|ขวด|ม้วน)/i);
+
+  if(gMatch){
+    let num = parseFloat(gMatch[1]);
+    let uStr = gMatch[2].toLowerCase();
+    if(uStr.includes('kg') || uStr.includes('กก')) num = num * 1000;
+    unit = 'g'; size = num;
+    name = name.replace(gMatch[0], '').trim();
+  } else if(sheetMatch){
+    unit = 'sheet'; size = parseInt(sheetMatch[1], 10);
+    name = name.replace(sheetMatch[0], '').trim();
+  } else if(customUnitMatch && (customUnitMatch[1] || customUnitMatch[2])){
+    unit = customUnitMatch[2];
+    size = customUnitMatch[1] ? parseInt(customUnitMatch[1], 10) : 1;
+    name = name.replace(customUnitMatch[0], '').trim();
+  }
+  if(!name) name = rawInput.trim();
+  return { name, unit, size };
+}
 
 /* ═══════════════ 2 · cost engine ═══════════════ */
 /* ของกลาง : ยอดซื้อ bucket=shared ทั้งหมด ÷ ม้วนทั้งหมดที่เคยขาย
@@ -513,28 +545,39 @@ function newDraft(){ return {id:uid(),store:S.stores[0],lines:{},total:'',date:t
 function viewBuy(){
   if(!buyDraft) buyDraft=newDraft();
   const d=buyDraft;
-  const stores=S.stores.map(s=>`<button class="chip ${d.store===s?'on':''}" data-store="${esc(s)}">${esc(s)}</button>`).join('')
+  const storeOptions = ['ทั้งหมด', ...S.stores];
+  const stores = storeOptions.map(s=>`<button class="chip ${d.store===s?'on':''}" data-store="${esc(s)}">${esc(s)}</button>`).join('')
     +`<button class="chip" data-addstore="1">+</button>`;
   const cats=S.cats.slice().sort((a,b)=>a.sort-b.sort).map(c=>{
-    const gs=S.goods.filter(g=>g.category_id===c.id && !g.archived);
+    const gs=S.goods.filter(g=>{
+      if(g.category_id!==c.id || g.archived) return false;
+      if(d.store==='ทั้งหมด'||!d.store) return true;
+      return g.last_store===d.store || !g.last_store || !!d.lines[g.id];
+    });
     const rows=gs.map(g=>{
       const l=d.lines[g.id], on=!!l;
       const price = l? l.price : (g.last_price ?? 0);
       const low = g.low_stock?`<span class="chip" style="color:var(--pause);border-color:var(--pause);padding:2px 8px;min-height:0">ใกล้หมด</span>`:'';
+      const storeTag = (d.store==='ทั้งหมด' && g.last_store)?`<span class="chip" style="padding:1px 6px;font-size:10px;min-height:0;margin-left:4px;color:var(--ink-3)">${esc(g.last_store)}</span>`:'';
       const diff = (on && g.last_price && l.price!==g.last_price)
         ? `<span class="mono" style="font-size:11px;color:var(--pause)">${l.price>g.last_price?'+':''}${money(l.price-g.last_price)}</span>`:'';
-      return `<div class="li">
-        <button data-tick="${g.id}" style="font-size:19px;width:28px;color:${on?'var(--ready)':'var(--ink-3)'}">${on?'☑':'☐'}</button>
-        <span class="g"><b style="font-weight:400">${esc(g.name)}</b>
-          <small> ${g.pack_size}${g.unit==='g'?'ก':g.unit==='sheet'?'แผ่น':'ชิ้น'}</small></span>
-        ${low}${diff}
-        ${on?`<button class="chip" data-promo="${g.id}" style="padding:3px 8px;min-height:0;${l.promo?'border-color:var(--pause);color:var(--pause)':''}">โปรฯ</button>
-        <button class="chip mono" data-packs="${g.id}" style="padding:3px 10px;min-height:0">${l.packs}</button>`:''}
-        <button class="num" data-price="${g.id}" style="color:${on?'var(--ink)':'var(--ink-3)'}">${money(price)}</button>
+      const uStr = fmtUnit(g.pack_size, g.unit);
+      const uTag = uStr ? `<small> · ${uStr}</small>` : '';
+      return `<div class="row" data-gid="${g.id}">
+        <div class="act"><div class="r" data-delgoods="${g.id}">ลบ</div></div>
+        <div class="in li" style="border-bottom:0;background:var(--card)">
+          <button data-tick="${g.id}" style="font-size:19px;width:28px;color:${on?'var(--ready)':'var(--ink-3)'}">${on?'☑':'☐'}</button>
+          <span class="g"><b style="font-weight:400">${esc(g.name)}</b>${storeTag}${uTag}</span>
+          ${low}${diff}
+          ${on?`<button class="chip" data-promo="${g.id}" style="padding:3px 8px;min-height:0;${l.promo?'border-color:var(--pause);color:var(--pause)':''}">โปรฯ</button>
+          <button class="chip mono" data-packs="${g.id}" style="padding:3px 10px;min-height:0">${l.packs}</button>`:''}
+          <button class="num" data-price="${g.id}" style="color:${on?'var(--ink)':'var(--ink-3)'}">${money(price)}</button>
+        </div>
       </div>`}).join('');
+    const emptyMsg = !gs.length ? `<div class="li" style="color:var(--ink-3);font-size:13px;justify-content:center">ไม่มีรายการใน ${esc(d.store)}</div>` : '';
     return `<div class="lbl"><span>${esc(c.name)}</span><span>${c.bucket==='equipment'?'ไม่หารเข้าม้วน':''}</span></div>
-      <div class="card">${rows}
-      <div class="li"><button data-addgoods="${c.id}" style="color:var(--ready);font-size:14px">＋ เพิ่มของในหมวดนี้</button></div></div>`;
+      <div class="card">${rows}${emptyMsg}
+      <div class="li" data-addgoods="${c.id}" style="cursor:pointer;color:var(--ready);font-size:14px">＋ เพิ่มของในหมวดนี้</div></div>`;
   }).join('');
   const sum=Object.entries(d.lines).reduce((a,[,l])=>a+l.price*l.packs,0);
   const act=d.total===''?null:Math.round(parseFloat(d.total||0)*100);
@@ -577,6 +620,14 @@ function saveBuy(){
     goods_id:l.goods_id,goods_name:l.goods_name,bucket:l.bucket,item_id:l.item_id,
     packs:l.packs,pack_size:l.pack_size,unit:l.unit,price:l.price,is_promo:l.is_promo}));
   buzz(20); paint();
+}
+function delGoods(gid){
+  const g=S.goods.find(x=>x.id===gid);
+  if(g){
+    g.archived=true;
+    if(buyDraft && buyDraft.lines[gid]) delete buyDraft.lines[gid];
+    save(); buzz(18); paint();
+  }
 }
 
 /* ── สรุป ── */
@@ -722,7 +773,7 @@ function tryPin(p){
 
 /* ═══════════════ 8 · events ═══════════════ */
 document.addEventListener('click',e=>{
-  const t=e.target.closest('[data-k],[data-go],[data-sell],[data-reenable],[data-note],[data-tf],[data-sheet],[data-sheet2],[data-close-sheet],[data-backdrop],[data-doopen],[data-float],[data-floatx],[data-mtog],[data-mprice],[data-doclose],[data-store],[data-addstore],[data-tick],[data-packs],[data-price],[data-promo],[data-addgoods],[data-savebuy],[data-iprice],[data-photo],[data-pin],[data-forget],[data-sbsave],[data-export],[data-lock],[data-paytog],[data-void]');
+  const t=e.target.closest('[data-k],[data-go],[data-sell],[data-reenable],[data-note],[data-tf],[data-sheet],[data-sheet2],[data-close-sheet],[data-backdrop],[data-doopen],[data-float],[data-floatx],[data-mtog],[data-mprice],[data-doclose],[data-store],[data-addstore],[data-tick],[data-packs],[data-price],[data-promo],[data-addgoods],[data-delgoods],[data-savebuy],[data-iprice],[data-photo],[data-pin],[data-forget],[data-sbsave],[data-export],[data-lock],[data-paytog],[data-void]');
   if(!t) return; const d=t.dataset;
 
   if(d.k!==undefined){ if(d.k==='x') buf=buf.slice(0,-1); else if(buf.length<4) buf+=d.k;
@@ -734,6 +785,7 @@ document.addEventListener('click',e=>{
   if(d.sheet2){ open(d.sheet2); return; }
 
   if(d.sell){ sell(d.sell); return; }
+  if(d.delgoods){ delGoods(d.delgoods); return; }
   /* Gap 1: re-enable disabled tile on tap */
   if(d.reenable){ const sh=shift(); if(sh&&sh.menu[d.reenable]){sh.menu[d.reenable].on=true; save(); paint()} return; }
   /* Gap 4: inline action buttons from tap-revealed row */
@@ -771,17 +823,85 @@ document.addEventListener('click',e=>{
     if(v!==null){ const st=Math.round(parseFloat(v)*100)||0;
       if(!buyDraft.lines[d.price]) buyDraft.lines[d.price]={price:st,packs:1,promo:false};
       else buyDraft.lines[d.price].price=st; paint() } return; }
-  if(d.addgoods){ const name=prompt('ชื่อของ'); if(!name) return;
-    const size=parseFloat(prompt('ขนาดต่อแพ็ค (ตัวเลข)','500'))||1;
-    const unit=(prompt('หน่วย: g = กรัม, pcs = ชิ้น, sheet = แผ่น','g')||'g').trim();
-    const price=Math.round(parseFloat(prompt('ราคาต่อแพ็ค (บาท)','0')||0)*100);
+  if(d.addgoods){
     const c=S.cats.find(x=>x.id===d.addgoods);
+    const catName=(c?c.name:'').toLowerCase();
+    const bucket=c?c.bucket:'shared';
+    const isMeat=bucket==='topping'||catName.includes('เนื้อ')||catName.includes('สด')||catName.includes('ไส้');
+    const isVeg=catName.includes('ผัก')||catName.includes('วัตถุดิบ');
+    const isSheet=catName.includes('แป้ง')||catName.includes('แผ่น');
+
+    const promptTitle = isMeat ? 'ชื่อของสด / ไส้' : (isVeg ? 'ชื่อผัก' : 'ชื่อของ');
+    const inputName = prompt(promptTitle, '');
+    if(!inputName||!inputName.trim()) return;
+    const cleanName = inputName.trim();
+
+    let unit = isMeat ? 'g' : (isSheet ? 'sheet' : 'pcs');
+    let size = isMeat ? 1000 : (isSheet ? 100 : 1);
+    let price = 0;
+
+    const uChoice = prompt(
+      `เลือกหน่วยของ "${cleanName}":\n` +
+      `1 = กรัม (100g)\n` +
+      `2 = แพ็ค / ถุง (1 แพ็ค)\n` +
+      `3 = ไม่ระบุหน่วย (เฉพาะราคาอย่างเดียว)\n\n` +
+      `พิมพ์ 1, 2, 3 (หรือพิมพ์ราคาตรงๆ ได้เลย):`,
+      isMeat ? '1' : '2'
+    );
+    if(uChoice === null) return;
+    const uc = uChoice.trim();
+
+    if(uc === '1'){
+      unit = 'g';
+      const sVal = prompt('ขนาด (กรัม): 1000g = 1 กก.', '100');
+      if(sVal === null) return;
+      size = parseFloat(sVal) || 100;
+      const pVal = prompt(`${cleanName} (${fmtUnit(size, unit)}) — ราคา (บาท)`, '0');
+      if(pVal === null) return;
+      price = Math.round(parseFloat(pVal || 0) * 100);
+    } else if(uc === '2'){
+      unit = 'pcs';
+      size = 1;
+      const pVal = prompt(`${cleanName} (1 แพ็ค) — ราคา (บาท)`, '0');
+      if(pVal === null) return;
+      price = Math.round(parseFloat(pVal || 0) * 100);
+    } else if(uc === '3'){
+      unit = 'none';
+      size = 1;
+      const pVal = prompt(`${cleanName} — ราคา (บาท)`, '0');
+      if(pVal === null) return;
+      price = Math.round(parseFloat(pVal || 0) * 100);
+    } else {
+      price = Math.round(parseFloat(uc || 0) * 100);
+      if(isMeat){ unit = 'g'; size = 1000; }
+      else if(isSheet){ unit = 'sheet'; size = 100; }
+      else{ unit = 'pcs'; size = 1; }
+    }
+
     let item_id=null;
-    if(c.bucket==='topping'){ const nm=prompt('ใช้กับไส้ไหน (พิมพ์ชื่อ)','');
-      const it=S.items.find(i=>i.name===nm); item_id=it?it.id:null; }
-    const g={id:uid(),name,category_id:c.id,item_id,unit,pack_size:size,
-      last_price:price,last_store:buyDraft.store,archived:false};
-    S.goods.push(g); buyDraft.lines[g.id]={price,packs:1,promo:false}; save(); paint(); return; }
+    if(isMeat){
+      const matched=S.items.find(i=>cleanName.includes(i.name)||i.name.includes(cleanName));
+      if(matched){ item_id=matched.id; }
+      else{
+        const menuList = S.items.map((it, idx) => `${idx + 1}. ${it.name}`).join('\n');
+        const ans = prompt(`ใช้กับไส้ไหน:\n${menuList}\n\nพิมพ์เลข 1-${S.items.length} (หรือพิมพ์ชื่อไส้):`, '1');
+        if(ans !== null && ans.trim()){
+          const str = ans.trim();
+          const num = parseInt(str, 10);
+          if(!isNaN(num) && num >= 1 && num <= S.items.length){
+            item_id = S.items[num - 1].id;
+          } else {
+            const found = S.items.find(i => i.name === str);
+            item_id = found ? found.id : null;
+          }
+        }
+      }
+    }
+    const store = (buyDraft && buyDraft.store !== 'ทั้งหมด') ? buyDraft.store : (S.stores[0]||'');
+    const g={id:uid(),name:cleanName,category_id:c.id,item_id,unit,pack_size:size,
+      last_price:price,last_store:store,archived:false};
+    S.goods.push(g); buyDraft.lines[g.id]={price,packs:1,promo:false}; save(); paint(); return;
+  }
   if(d.savebuy){ saveBuy(); return; }
 
   if(d.iprice){ const i=item(d.iprice), v=prompt(i.name+' — ราคาขาย (บาท)',B(i.price));
@@ -831,22 +951,22 @@ document.addEventListener('touchend',e=>{
   if(!cur)return; const dx=e.changedTouches[0].clientX-sx, dy=e.changedTouches[0].clientY-sy;
   if(Math.abs(dy)<40){
     if(dx<-30){
-      document.querySelectorAll('.feed .row').forEach(el=>{ if(el!==cur) el.classList.remove('sl','sr'); });
+      document.querySelectorAll('.row').forEach(el=>{ if(el!==cur) el.classList.remove('sl','sr'); });
       cur.classList.add('sl'); cur.classList.remove('sr');
-    }else if(dx>30){
-      document.querySelectorAll('.feed .row').forEach(el=>{ if(el!==cur) el.classList.remove('sl','sr'); });
+    }else if(dx>30 && cur.querySelector('[data-paytog]')){
+      document.querySelectorAll('.row').forEach(el=>{ if(el!==cur) el.classList.remove('sl','sr'); });
       cur.classList.add('sr'); cur.classList.remove('sl');
     }
   }
   cur=null;},{passive:true});
 document.addEventListener('click',e=>{
-  if(e.target.closest('[data-paytog],[data-void]')) return;
+  if(e.target.closest('[data-tick],[data-packs],[data-price],[data-promo],[data-paytog],[data-void],[data-delgoods]')) return;
   const r=e.target.closest('.row');
-  if(!r){ document.querySelectorAll('.feed .row').forEach(el=>el.classList.remove('sl','sr')); return; }
+  if(!r){ document.querySelectorAll('.row').forEach(el=>el.classList.remove('sl','sr')); return; }
   if(r.classList.contains('sl')||r.classList.contains('sr')){
     r.classList.remove('sl','sr'); return;
   }
-  document.querySelectorAll('.feed .row').forEach(el=>{ if(el!==r) el.classList.remove('sl','sr'); });
+  document.querySelectorAll('.row').forEach(el=>{ if(el!==r) el.classList.remove('sl','sr'); });
   r.classList.add('sl');
 });
 
