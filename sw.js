@@ -1,4 +1,4 @@
-const V='rap-v2';
+const V='rap-v6';
 const CORE=['./','./index.html','./manifest.webmanifest','./icon.svg'];
 self.addEventListener('install',e=>{
   e.waitUntil(caches.open(V).then(c=>c.addAll(CORE)).then(()=>self.skipWaiting()));

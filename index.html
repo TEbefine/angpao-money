@@ -90,15 +90,11 @@ h2.ttl{font-size:17px;font-weight:600;margin:var(--s4) var(--s3) var(--s2)}
 .row .in .t{font-family:var(--mono);font-size:13px;color:var(--ink-3)}
 .row .in .nm{flex:1;font-size:14px}
 .row .in .pm{font-size:11px;color:var(--ink-3)}
-.row .act{position:absolute;inset:0;display:flex;z-index:1}
-.row .act .l,.row .act .r{display:grid;place-items:center;font-size:12px;width:50%}
-.row .act .l{background:var(--ready-bg);color:var(--ready);justify-content:flex-start;padding-left:12px}
-.row .act .r{background:var(--pause-bg);color:var(--pause);justify-content:flex-end;padding-right:12px}
+.row .act{position:absolute;inset:0;display:flex;justify-content:space-between;z-index:1}
+.row .act .l{display:grid;place-items:center;font-size:12px;font-weight:500;width:90px;background:var(--ready-bg);color:var(--ready);cursor:pointer}
+.row .act .r{display:grid;place-items:center;font-size:12px;font-weight:500;width:74px;background:var(--pause-bg);color:var(--pause);cursor:pointer}
 .row.sl .in{transform:translateX(-74px)}
-.row.sr .in{transform:translateX(74px)}
-.row .inact{display:none;gap:6px;padding:6px 0}
-.row.open .in{display:none}
-.row.open .inact{display:flex;align-items:center}
+.row.sr .in{transform:translateX(90px)}
 
 /* --- generic --- */
 .wide{margin:var(--s2) var(--s3) 0;min-height:48px;display:flex;align-items:center;
@@ -494,24 +490,19 @@ function viewSell(sh){
         <button class="tf" data-tf="1">โอน</button></div></div>`;
     }
   }
-  /* feed — Gap 4: tap reveals both actions inline */
+  /* feed — tap or swipe left reveals delete; swipe right reveals paytog */
   const feed=rows.slice(-14).reverse().map(s=>{
     const p=payOf(s);
     return `<div class="row" data-sale="${s.id}">
-      <div class="act"><div class="l">โอน / สด</div><div class="r">ลบ</div></div>
+      <div class="act"><div class="l" data-paytog="${s.id}">โอน / สด</div><div class="r" data-void="${s.id}">ลบ</div></div>
       <div class="in"><span class="t">${clock(s.ts)}</span><span class="nm">${esc(s.item_name)}</span>
       ${p==='transfer'?'<span class="pm">โอน</span>':p==='cash'?'<span class="pm">สด</span>':''}</div>
-      <div class="inact">
-        <span class="t">${clock(s.ts)}</span><span class="nm" style="flex:1">${esc(s.item_name)}</span>
-        <button class="chip" data-paytog="${s.id}" style="padding:4px 10px;min-height:0;color:var(--ready);border-color:var(--ready)">${p==='cash'?'สด→โอน':p==='transfer'?'โอน→สด':'ตั้งสด'}</button>
-        <button class="chip" data-void="${s.id}" style="padding:4px 10px;min-height:0;color:var(--pause);border-color:var(--pause)">ลบ</button>
-      </div>
     </div>`}).join('');
   return `<div class="grid">${tiles}</div>
     ${strip?`<div style="margin-bottom:12px">${strip}</div>`:''}
     <button class="wide" data-sheet="menu">แก้เมนูวันนี้
       <span class="mono" style="color:var(--ink-3)">${on.length}/${S.items.length}</span></button>
-    ${rows.length?`<div class="lbl"><span>ล่าสุด</span><span>แตะเพื่อแก้ · ปัดซ้ายลบ · ปัดขวาสลับจ่าย</span></div>
+    ${rows.length?`<div class="lbl"><span>ล่าสุด</span><span>แตะ/ปัดซ้ายลบ · ปัดขวาสลับสด/โอน</span></div>
     <div class="feed">${feed}</div>`:`<p class="note" style="margin-top:24px">แตะรูปเพื่อขาย 1 ม้วน</p>`}
     <div style="height:24px"></div>`;
 }
@@ -832,28 +823,31 @@ document.addEventListener('input',e=>{
     const a=parseFloat($('#c1').value||0), b=parseFloat($('#c2').value||0);
     $('#cres').textContent=(b-a).toLocaleString('th-TH'); }
 });
-/* swipe */
+/* swipe & tap handlers */
 let sx=0,sy=0,cur=null;
 document.addEventListener('touchstart',e=>{const r=e.target.closest('.row');
   if(!r)return; cur=r; sx=e.touches[0].clientX; sy=e.touches[0].clientY;},{passive:true});
 document.addEventListener('touchend',e=>{
   if(!cur)return; const dx=e.changedTouches[0].clientX-sx, dy=e.changedTouches[0].clientY-sy;
-  if(Math.abs(dy)>40){cur=null;return}
-  if(dx<-40) cur.classList.add('sl'),cur.classList.remove('sr');
-  else if(dx>40) cur.classList.add('sr'),cur.classList.remove('sl');
+  if(Math.abs(dy)<40){
+    if(dx<-30){
+      document.querySelectorAll('.feed .row').forEach(el=>{ if(el!==cur) el.classList.remove('sl','sr'); });
+      cur.classList.add('sl'); cur.classList.remove('sr');
+    }else if(dx>30){
+      document.querySelectorAll('.feed .row').forEach(el=>{ if(el!==cur) el.classList.remove('sl','sr'); });
+      cur.classList.add('sr'); cur.classList.remove('sl');
+    }
+  }
   cur=null;},{passive:true});
 document.addEventListener('click',e=>{
-  /* handle inline action buttons first */
   if(e.target.closest('[data-paytog],[data-void]')) return;
-  const r=e.target.closest('.row'); if(!r) return;
-  const id=r.dataset.sale;
-  if(r.classList.contains('sl')){ voidSale(id); return; }
-  if(r.classList.contains('sr')){
-    const s=S.sales.find(x=>x.id===id), p=payOf(s);
-    setPay([id], p==='cash'?'transfer':'cash'); return; }
-  /* Gap 4: tap toggles inline action row */
-  r.classList.toggle('open');
-  if(r.classList.contains('open')) setTimeout(()=>{r.classList.remove('open')},5000);
+  const r=e.target.closest('.row');
+  if(!r){ document.querySelectorAll('.feed .row').forEach(el=>el.classList.remove('sl','sr')); return; }
+  if(r.classList.contains('sl')||r.classList.contains('sr')){
+    r.classList.remove('sl','sr'); return;
+  }
+  document.querySelectorAll('.feed .row').forEach(el=>{ if(el!==r) el.classList.remove('sl','sr'); });
+  r.classList.add('sl');
 });
 
 /* ═══════════════ 9 · boot ═══════════════ */
