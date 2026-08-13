@@ -200,7 +200,7 @@ const dur = ms => { const m=Math.floor(ms/60000); return Math.floor(m/60)+'ช�
 /* ═══════════════ 1 · state ═══════════════ */
 const DEVICE = localStorage.dev || (localStorage.dev = uid().slice(0,8));
 const SEED_ITEMS = [
-  ['แซลมอน',5900],['กุ้ง',4900],['คาริยากิ',4500],['สไปซี่',4500],
+  ['แซลมอน',5900],['กุ้ง',4900],['ทูน่า',4500],['คาริยากิ',4500],['สไปซี่',4500],
   ['หม่าล่า',4500],['อะโวคาโด',4500],['ไส้กรอกไก่',3900],['ปูอัด',3900]
 ];
 const SEED_CATS = [
@@ -241,6 +241,23 @@ function load(){
   if(!S || !S.items){ S = blank(); save(); }
   if(MODE==='test' && S.seeded && Date.now()-S.seeded > 7*864e5){ S=blank(); save(); }
   if(!S.sb || !S.sb.url){ S.sb={url:SB_DEFAULT.url,key:SB_DEFAULT.key}; save(); }
+  /* ── migration: add any SEED_ITEMS that are missing from existing state ── */
+  let migrated=false;
+  SEED_ITEMS.forEach(([name,price])=>{
+    if(!S.items.find(i=>i.name===name)){
+      const newItem={id:uid(),name,price,sort:S.items.length,photo:'',active:true};
+      S.items.push(newItem);
+      /* link goods in the หน้าโรล (topping) category */
+      const toppingCat=S.cats.find(c=>c.bucket==='topping');
+      if(toppingCat) S.goods.push({id:uid(),name,category_id:toppingCat.id,item_id:newItem.id,
+        unit:'g',pack_size:500,last_price:null,last_store:'',archived:false,low_stock:false});
+      /* patch any open shift's menu */
+      const sh=S.shifts.find(s=>!s.closed_at);
+      if(sh) sh.menu[newItem.id]={on:true,price};
+      migrated=true;
+    }
+  });
+  if(migrated) save();
   buyDraft = S.buyDraft || null;
   HIST.days=[]; HIST.done=false; HIST.err=null; HIST.open=null; HIST.detail={}; HIST.key=null;
   document.body.classList.toggle('test',MODE==='test');
@@ -759,8 +776,8 @@ function sell(id){
   const row={id:uid(),shift_id:sh.id,item_id:id,item_name:it.name,price,
     pay:'unknown',void_of:null,device:DEVICE,ts:Date.now()};
   S.sales.push(row);                                   // optimistic — จอขึ้นก่อน
-  if(cust.paid!==null || Date.now()-cust.last > 25000){
-    clearTimeout(cust.tm); cust.ids=[]; cust.paid=null;
+  if(cust.paid!==null){
+    cust.ids=[]; cust.paid=null;
   }
   cust.ids.push(row.id); cust.last=Date.now();
   save(); buzz(14); paint();
@@ -768,7 +785,18 @@ function sell(id){
     price,pay:'unknown',device:DEVICE,is_test:MODE==='test',
     created_at:new Date(row.ts).toISOString()});
   HIST.key=null;
-  clearTimeout(cust.tm); cust.tm=setTimeout(()=>{cust.ids=[];cust.paid=null;paint()},10000);
+}
+function custClear(){ cust.ids=[]; cust.paid=null; paint(); }
+function custRemove(sid){ cust.ids=cust.ids.filter(x=>x!==sid); if(!cust.ids.length) cust.paid=null; paint(); }
+function custRemoveOne(itemId){
+  /* remove the last sale of this item_id from the customer group */
+  const idx = [...cust.ids].reverse().findIndex(id=>{ const s=S.sales.find(x=>x.id===id); return s && s.item_id===itemId; });
+  if(idx>=0){ const realIdx=cust.ids.length-1-idx; cust.ids.splice(realIdx,1); }
+  if(!cust.ids.length) cust.paid=null; paint();
+}
+function custAddOne(itemId){
+  /* add one more of this item via sell() — sell() will keep the group because paid is null */
+  sell(itemId);
 }
 function voidSale(sid){
   const row={id:uid(),shift_id:shift().id,item_id:null,item_name:'ยกเลิก',
@@ -840,49 +868,136 @@ function viewSell(sh){
   const on=S.items.filter(i=>sh.menu[i.id]&&sh.menu[i.id].on);
   let firstActive=true;
   const span2=on.length%2===1;
+  const c_info=costs();
   const tiles=S.items.map(i=>{
     const m=sh.menu[i.id]; if(!m) return '';
     const isOn=m.on;
     const pic=i.photo?`background-image:url('${esc(i.photo)}')`:'';
+    /* low-stock: find goods linked to this item */
+    const linkedGoods=S.goods.filter(g=>g.item_id===i.id && !g.archived);
+    const isLow=linkedGoods.some(g=>g.low_stock);
     if(!isOn) return `<button class="tile off" data-reenable="${i.id}">
       <div class="pic"></div>
       <div class="cap"><b>${esc(i.name)}</b></div></button>`;
+    /* per-roll margin hint */
+    const unitCost=c_info.sharedPer+(c_info.topPer[i.id]||0);
+    const margin=m.price-unitCost;
+    const marginTag=c_info.rolls>=30
+      ? `<span style="font-size:10px;padding:1px 5px;border-radius:4px;margin-left:4px;
+           background:${margin>=0?'var(--ready-bg)':'var(--pause-bg)'};
+           color:${margin>=0?'var(--ready)':'var(--pause)'}">
+           ${margin>=0?'+':''}${money(margin)}
+         </span>` : '';
+    const lowBadge=isLow
+      ? `<span style="position:absolute;top:6px;left:6px;font-size:9px;font-weight:600;
+           padding:2px 5px;border-radius:4px;background:var(--pause);color:#fff">ใกล้หมด</span>` : '';
     const wide=span2&&firstActive?' style="grid-column:span 2"':'';
     firstActive=false;
     return `<button class="tile" data-sell="${i.id}"${wide}>
       <div class="pic" style="${pic}">
+        ${lowBadge}
         <span class="n">${cnt[i.id]||0}</span></div>
-      <div class="cap"><b>${esc(i.name)}</b><i>${money(m.price)}฿</i></div>
+      <div class="cap"><b>${esc(i.name)}</b><i>${money(m.price)}฿${marginTag}</i></div>
     </button>`}).join('');
   /* customer strip */
   let strip='';
   const grp=cust.ids.map(id=>S.sales.find(s=>s.id===id)).filter(s=>s&&live(s));
   if(grp.length){
     const tot=grp.reduce((a,s)=>a+s.price,0), tb=B(tot);
+    /* group by item_id */
+    const grouped=[];
+    const seen={};
+    grp.forEach(s=>{
+      if(seen[s.item_id]){ seen[s.item_id].qty++; seen[s.item_id].total+=s.price; }
+      else { const entry={item_id:s.item_id,name:s.item_name,unitPrice:s.price,qty:1,total:s.price}; seen[s.item_id]=entry; grouped.push(entry); }
+    });
+    const editableOrderList=grouped.map(g=>`<div style="display:flex;align-items:center;gap:6px;padding:6px 0;border-bottom:1px solid var(--line)">
+      <span style="flex:1;font-size:14px">${esc(g.name)}</span>
+      <div style="display:flex;align-items:center;gap:0">
+        <button data-custminus="${g.item_id}" style="width:30px;height:30px;border:1px solid var(--line-2);border-radius:6px 0 0 6px;background:var(--card);color:var(--pause);font-size:16px;font-weight:600;display:grid;place-items:center;cursor:pointer">−</button>
+        <span class="mono" style="font-size:14px;min-width:28px;text-align:center;border-top:1px solid var(--line-2);border-bottom:1px solid var(--line-2);height:30px;line-height:30px;background:var(--card)">${g.qty}</span>
+        <button data-custplus="${g.item_id}" style="width:30px;height:30px;border:1px solid var(--line-2);border-radius:0 6px 6px 0;background:var(--card);color:var(--ready);font-size:16px;font-weight:600;display:grid;place-items:center;cursor:pointer">+</button>
+      </div>
+      <span class="mono" style="font-size:13px;color:var(--ink-2);min-width:50px;text-align:right">${money(g.total)}฿</span>
+    </div>`).join('');
+
+    const confirmedOrderList=grouped.map(g=>`<div style="display:flex;align-items:center;justify-content:space-between;padding:7px 0;border-bottom:1px solid var(--line)">
+      <div style="display:flex;align-items:center;gap:8px;flex:1;min-width:0">
+        <span style="font-size:14px;font-weight:500;color:var(--ink);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(g.name)}</span>
+        <span class="mono" style="font-size:12px;font-weight:500;padding:2px 8px;border-radius:10px;background:var(--ready-bg);color:var(--ready)">x${g.qty}</span>
+      </div>
+      <span class="mono" style="font-size:14px;font-weight:500;color:var(--ink);min-width:54px;text-align:right">${money(g.total)}฿</span>
+    </div>`).join('');
+
     if(cust.paid==='transfer'){
-      strip=`<div class="cust done" style="margin:0 var(--s3) var(--s3)"><div class="chg">
-        <span style="font-size:13px;color:#4f46e5">โอน</span>
-        <b style="color:#4f46e5">${tb.toLocaleString('th-TH')}฿</b></div></div>`;
-    }else if(cust.paid!==null && (cust.paid-tb)>0){
-      strip=`<div class="cust done" style="margin:0 var(--s3) var(--s3)"><div class="chg">
-        <span style="font-size:13px;color:var(--ink-2)">ทอน</span>
-        <b>${(cust.paid-tb).toLocaleString('th-TH')}</b></div></div>`;
+      strip=`<div class="cust done" style="margin:0 var(--s3) var(--s3);padding:14px;background:#f5f3ff;border:1.5px solid #6366f1;border-radius:var(--r)">
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;padding-bottom:10px;border-bottom:1px solid #e0e7ff">
+          <div style="display:flex;align-items:center;gap:6px">
+            <span style="font-size:12px;font-weight:600;background:#e0e7ff;color:#4338ca;padding:3px 8px;border-radius:6px">โอนเงิน</span>
+            <span style="font-size:13px;color:#4338ca;font-weight:500">ชำระเรียบร้อย</span>
+          </div>
+          <b class="mono" style="font-size:24px;font-weight:600;color:#4338ca">${tb.toLocaleString('th-TH')}฿</b>
+        </div>
+        <div style="margin:8px 0 10px">${confirmedOrderList}</div>
+        <div style="display:flex;gap:8px;margin-top:10px">
+          <button data-reedit="1" style="padding:0 14px;min-height:46px;border:1px solid #c7d2fe;border-radius:var(--r);background:#ffffff;color:#4338ca;font-size:13px;font-weight:500;cursor:pointer">แก้ไข</button>
+          <button class="wide go" data-custdone="1" style="margin:0;flex:1;min-height:46px;font-size:15px;font-weight:600;background:#4338ca;border-color:#4338ca">บันทึกออเดอร์</button>
+        </div>
+      </div>`;
+    }else if(cust.paid!==null){
+      const paidVal=(cust.paid===0 || cust.paid===tb)?tb:cust.paid;
+      const change=paidVal-tb;
+      if(change>0){
+        strip=`<div class="cust done" style="margin:0 var(--s3) var(--s3);padding:14px;background:#ffffff;border:2px solid #10b981;border-radius:var(--r);box-shadow:0 4px 12px rgba(16,185,129,0.12)">
+          <div style="background:#ecfdf5;border:1px solid #a7f3d0;border-radius:8px;padding:12px 14px;margin-bottom:12px">
+            <div class="chg" style="display:flex;align-items:baseline;justify-content:space-between">
+              <span style="font-size:14px;font-weight:600;color:#047857;display:flex;align-items:center;gap:6px">
+                <span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:#10b981"></span> เงินทอน
+              </span>
+              <b class="mono" style="font-size:32px;font-weight:700;color:#059669;letter-spacing:-0.5px">${change.toLocaleString('th-TH')}฿</b>
+            </div>
+            <div style="display:flex;justify-content:space-between;align-items:center;margin-top:6px;padding-top:6px;border-top:1px dashed #a7f3d0;font-size:12px;color:#065f46">
+              <span>รับเงิน: <b class="mono" style="font-weight:600">${paidVal.toLocaleString('th-TH')}฿</b></span>
+              <span>ยอดรวม: <b class="mono" style="font-weight:600">${tb.toLocaleString('th-TH')}฿</b></span>
+            </div>
+          </div>
+          <div style="margin:8px 0 10px">${confirmedOrderList}</div>
+          <div style="display:flex;gap:8px;margin-top:10px">
+            <button data-reedit="1" style="padding:0 14px;min-height:46px;border:1px solid var(--line-2);border-radius:var(--r);background:#ffffff;color:var(--ink-2);font-size:13px;font-weight:500;cursor:pointer">แก้ไข</button>
+            <button class="wide go" data-custdone="1" style="margin:0;flex:1;min-height:46px;font-size:15px;font-weight:600">บันทึกออเดอร์</button>
+          </div>
+        </div>`;
+      }else{
+        strip=`<div class="cust done" style="margin:0 var(--s3) var(--s3);padding:14px;background:#ffffff;border:1.5px solid var(--ready);border-radius:var(--r)">
+          <div style="background:var(--ready-bg);border-radius:8px;padding:10px 14px;margin-bottom:12px;display:flex;align-items:center;justify-content:space-between">
+            <div>
+              <span style="font-size:12px;font-weight:600;background:var(--ready);color:#ffffff;padding:2px 7px;border-radius:4px;margin-right:6px">เงินสด</span>
+              <span style="font-size:13px;font-weight:600;color:var(--ready)">จ่ายพอดี (ไม่ต้องทอน)</span>
+            </div>
+            <b class="mono" style="font-size:24px;font-weight:600;color:var(--ready)">${tb.toLocaleString('th-TH')}฿</b>
+          </div>
+          <div style="margin:8px 0 10px">${confirmedOrderList}</div>
+          <div style="display:flex;gap:8px;margin-top:10px">
+            <button data-reedit="1" style="padding:0 14px;min-height:46px;border:1px solid var(--line-2);border-radius:var(--r);background:#ffffff;color:var(--ink-2);font-size:13px;font-weight:500;cursor:pointer">แก้ไข</button>
+            <button class="wide go" data-custdone="1" style="margin:0;flex:1;min-height:46px;font-size:15px;font-weight:600">บันทึกออเดอร์</button>
+          </div>
+        </div>`;
+      }
     }else if(cust.paid===null){
       const notes=[]; const r10=Math.ceil(tb/10)*10;
       if(r10!==tb) notes.push(r10);
       [20,50,100,500,1000].filter(n=>n>tb).slice(0,2).forEach(n=>notes.push(n));
       const cashNotes = [...new Set(notes)];
-      strip=`<div style="display:flex;gap:8px;margin:0 var(--s3) var(--s3);align-items:stretch">
-        <div class="cust" style="flex:3;margin:0;display:flex;flex-direction:column;justify-content:space-between">
+      strip=`<div style="margin:0 var(--s3) var(--s3)">
+        <div class="cust" style="margin:0;display:flex;flex-direction:column">
           <div class="top"><span>ลูกค้าท่านนี้</span><b>${tb.toLocaleString('th-TH')}฿</b></div>
+          <div style="margin-bottom:8px">${editableOrderList}</div>
           <div class="btns">
             <button data-note="0">พอดี</button>
-            ${cashNotes.map(n=>`<button data-note="${n}">${n}</button>`).join('')}
+            ${cashNotes.map(n=>`<button data-note="${n}">${n.toLocaleString('th-TH')}</button>`).join('')}
+            <button data-tf="1" class="tf">โอน</button>
           </div>
         </div>
-        <button class="tf" data-tf="1" style="flex:1;margin:0;background:#eef2ff;border:1px solid #818cf8;border-radius:var(--r);color:#4f46e5;display:flex;flex-direction:column;align-items:center;justify-content:center;font-size:16px;font-weight:600;cursor:pointer;min-height:76px;padding:0">
-          <span style="font-size:16px;font-weight:600">โอน</span>
-        </button>
       </div>`;
     }
   }
@@ -943,7 +1058,7 @@ function viewBuy(){
         </div>
       </div>`}).join('');
     const emptyMsg = !gs.length ? `<div class="li" style="color:var(--ink-3);font-size:13px;justify-content:center">ไม่มีรายการใน ${esc(d.store)}</div>` : '';
-    return `<div class="lbl"><span>${esc(c.name)}</span><span>${c.bucket==='equipment'?'ไม่หารเข้าม้วน':''}</span></div>
+    return `<div class="lbl"><span>${esc(c.name)}</span></div>
       <div class="card">${rows}${emptyMsg}
       <div class="li" data-addgoods="${c.id}" style="cursor:pointer;color:var(--ready);font-size:14px">＋ เพิ่มของในหมวดนี้</div></div>`;
   }).join('');
@@ -1016,21 +1131,52 @@ function viewSum(){
   if(!sh) return `<h2 class="ttl">สรุป</h2><p class="note">ยังไม่มีรอบขาย</p>`;
   const st=shiftStats(sh), c=costs();
   const byItem={}; st.rows.forEach(s=>byItem[s.item_id]=(byItem[s.item_id]||0)+1);
-  const list=S.items.filter(i=>byItem[i.id]).sort((a,b)=>byItem[b.id]-byItem[a.id]).map(i=>{
-    const unit=c.sharedPer+(c.topPer[i.id]||0), price=(sh.menu[i.id]||i).price;
-    return `<div class="kv"><span>${esc(i.name)} <span class="mono" style="color:var(--ink-3)">×${byItem[i.id]}</span></span>
-      <b>ทุน ${money(unit)} · เหลือ <span class="pos">${money(price-unit)}</span></b></div>`}).join('');
+
+  /* per-topping breakdown sorted by margin desc */
+  const toppingRows=S.items.filter(i=>byItem[i.id]).map(i=>{
+    const unitCost=c.sharedPer+(c.topPer[i.id]||0);
+    const price=(sh.menu[i.id]||i).price;
+    const margin=price-unitCost;
+    const qty=byItem[i.id];
+    return {i,qty,unitCost,price,margin};
+  }).sort((a,b)=>b.margin-a.margin);
+
+  const list=toppingRows.map(({i,qty,unitCost,price,margin})=>{
+    const marginPct=price?Math.round(margin/price*100):0;
+    const isGood=margin>=0;
+    return `<div class="kv">
+      <span>${esc(i.name)} <span class="mono" style="color:var(--ink-3)">×${qty}</span></span>
+      <span style="display:flex;gap:6px;align-items:baseline">
+        <span style="font-size:11px;color:var(--ink-3)">ทุน ${money(unitCost)}</span>
+        <b style="color:${isGood?'var(--ready)':'var(--pause)'}">${isGood?'+':''}${money(margin)}
+          <small style="font-size:10px;opacity:.7">${marginPct}%</small>
+        </b>
+      </span>
+    </div>`}).join('');
+
   const drawer=sh.float_start+st.cash;
+  /* top topping today */
+  const topEntry=toppingRows[0];
+  const topBadge=topEntry?`<div style="margin:0 var(--s3) var(--s3);background:var(--ready-bg);
+    border-radius:var(--r);padding:10px 12px;display:flex;align-items:center;justify-content:space-between">
+    <span style="font-size:13px;color:var(--ready)">⭐ ขายดีสุดวันนี้</span>
+    <span style="font-size:14px;font-weight:600">${esc(topEntry.i.name)}
+      <span class="mono" style="font-size:12px;color:var(--ink-3)"> ×${topEntry.qty}</span>
+    </span>
+    <b class="mono" style="color:var(--ready)">${money(topEntry.i.price)}฿</b>
+  </div>`:'';
+
   return `<h2 class="ttl">${sh.closed_at?'สรุปวันที่ผ่านมา':'วันนี้'}</h2>
     <p class="sub mono">${new Date(sh.opened_at).toLocaleDateString('th-TH',{weekday:'long',day:'numeric',month:'long'})}</p>
     <div style="padding:0 16px 8px"><div class="big ${st.profit>=0?'pos':'neg'}">${money(st.profit)}</div>
       <div style="font-size:13px;color:var(--ink-3)">กำไรโดยประมาณ · ${st.n} ม้วน</div>
       ${c.rolls<150?`<div style="font-size:12px;color:var(--test);background:var(--test-bg);
         border-radius:var(--r);padding:8px 10px;margin-top:12px;line-height:1.5">
-        ขายสะสม <span class="mono">${c.rolls}</span> ม้วน — ยังน้อยเกินกว่าจะเชื่อตัวเลขนี้
+        ขายสะสม <span class="mono">${c.rolls}</span> ม้วน — ยังน้อยเกินไปกว่าจะเชื่อตัวเลขนี้
         เพราะซื้อของทั้งอาทิตย์แต่หารด้วยม้วนไม่กี่ม้วน ตัวเลขจะนิ่งเองราวม้วนที่ 150
         (ประมาณ 4 สัปดาห์) ระหว่างนี้ดู <b>ยอดขาย</b> กับ <b>จำนวนม้วน</b> พอ</div>`:''}
     </div>
+    ${topBadge}
     <div class="lbl"><span>เงิน</span></div>
     <div class="card">
       <div class="kv"><span>ยอดขาย</span><b>${money(st.rev)}</b></div>
@@ -1039,7 +1185,7 @@ function viewSum(){
       ${st.unk?`<div class="kv"><span>ยังไม่ระบุวิธีจ่าย</span><b>${money(st.unk)}</b></div>`:''}
       ${st.tf?`<div class="kv"><span>โอน</span><b>${money(st.tf)}</b></div>`:''}
     </div>
-    <div class="lbl"><span>ต่อม้วน</span><span class="mono">ของกลาง ${money(c.sharedPer)}</span></div>
+    <div class="lbl"><span>กำไรต่อหน้า</span><span class="mono">ของกลาง ${money(c.sharedPer)}</span></div>
     <div class="card">${list||'<div class="kv"><span>ยังไม่ขาย</span></div>'}</div>
     ${c.equip?`<div class="lbl"><span>อุปกรณ์ · คืนทุน</span></div>
     <div class="card"><div class="kv"><span>ลงทุนไป</span><b>${money(c.equip)}</b></div>
@@ -1188,7 +1334,7 @@ document.addEventListener('click',e=>{
   }
   document.querySelectorAll('.row.sl, .row.sr').forEach(el=>el.classList.remove('sl','sr'));
 
-  const t=e.target.closest('[data-k],[data-go],[data-sell],[data-reenable],[data-note],[data-tf],[data-sheet],[data-sheet2],[data-close-sheet],[data-backdrop],[data-doopen],[data-float],[data-floatx],[data-mtog],[data-mprice],[data-doclose],[data-store],[data-addstore],[data-tick],[data-packs],[data-price],[data-promo],[data-addgoods],[data-delgoods],[data-savebuy],[data-iprice],[data-photo],[data-pin],[data-forget],[data-sbsave],[data-export],[data-lock],[data-paytog],[data-void],[data-day],[data-more]');
+  const t=e.target.closest('[data-k],[data-go],[data-sell],[data-reenable],[data-note],[data-tf],[data-sheet],[data-sheet2],[data-close-sheet],[data-backdrop],[data-doopen],[data-float],[data-floatx],[data-mtog],[data-mprice],[data-doclose],[data-store],[data-addstore],[data-tick],[data-packs],[data-price],[data-promo],[data-addgoods],[data-delgoods],[data-savebuy],[data-iprice],[data-photo],[data-pin],[data-forget],[data-sbsave],[data-export],[data-lock],[data-paytog],[data-void],[data-day],[data-more],[data-custdone],[data-custremove],[data-custminus],[data-custplus],[data-reedit]');
   if(!t) return; const d=t.dataset;
 
   if(d.k!==undefined){ if(d.k==='x') buf=buf.slice(0,-1); else if(buf.length<4) buf+=d.k;
@@ -1212,14 +1358,18 @@ document.addEventListener('click',e=>{
   /* Gap 4: inline action buttons from tap-revealed row */
   if(d.paytog){ const s=S.sales.find(x=>x.id===d.paytog); if(s){ const p=payOf(s); setPay([d.paytog],p==='cash'?'transfer':'cash') } return; }
   if(d.void!=null){ voidSale(d.void); return; }
+  if(d.reedit!==undefined){ cust.paid=null; paint(); return; }
+  if(d.custdone!==undefined){ custClear(); return; }
+  if(d.custremove){ custRemove(d.custremove); return; }
+  if(d.custminus){ custRemoveOne(d.custminus); return; }
+  if(d.custplus){ custAddOne(d.custplus); return; }
   if(d.note!==undefined){ const v=+d.note;
     const tot=B(cust.ids.map(i=>S.sales.find(s=>s.id===i)).filter(s=>s&&live(s)).reduce((a,s)=>a+s.price,0));
-    setPay(cust.ids,'cash'); clearTimeout(cust.tm);
-    if(v===0 || v===tot){ cust.ids=[]; cust.paid=null; paint(); return; }
-    cust.paid=v; cust.tm=setTimeout(()=>{cust.ids=[];cust.paid=null;paint()},10000); paint(); return; }
-  /* Gap 3: transfer keeps strip 10s showing confirmation */
-  if(d.tf){ setPay(cust.ids,'transfer'); cust.paid='transfer';
-    clearTimeout(cust.tm); cust.tm=setTimeout(()=>{cust.ids=[];cust.paid=null;paint()},10000); paint(); return; }
+    setPay(cust.ids,'cash');
+    if(v===0 || v===tot){ /* พอดี — ยังเก็บ list ไว้ให้ตรวจ แล้วกดบันทึกออเดอร์เอง */ }
+    cust.paid=v; paint(); return; }
+  /* Gap 3: transfer — stays until บันทึกออเดอร์ */
+  if(d.tf){ setPay(cust.ids,'transfer'); cust.paid='transfer'; paint(); return; }
 
   if(d.doopen!==undefined){ sheet=null; openShop(+d.doopen); return; }
   if(d.float){ sheet=null; openShop(+d.float); return; }
