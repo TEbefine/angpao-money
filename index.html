@@ -408,7 +408,9 @@ function sell(id){
   const row={id:uid(),shift_id:sh.id,item_id:id,item_name:it.name,price,
     pay:'unknown',void_of:null,device:DEVICE,ts:Date.now()};
   S.sales.push(row);                                   // optimistic — จอขึ้นก่อน
-  if(Date.now()-cust.last > 25000){cust.ids=[];cust.paid=null}
+  if(cust.paid!==null || Date.now()-cust.last > 25000){
+    clearTimeout(cust.tm); cust.ids=[]; cust.paid=null;
+  }
   cust.ids.push(row.id); cust.last=Date.now();
   save(); buzz(14); paint();
   queue(T.sales,{id:row.id,shift_id:row.shift_id,item_id:id,item_name:it.name,
@@ -504,22 +506,30 @@ function viewSell(sh){
   if(grp.length){
     const tot=grp.reduce((a,s)=>a+s.price,0), tb=B(tot);
     if(cust.paid==='transfer'){
-      strip=`<div class="cust done"><div class="chg">
-        <span style="font-size:13px;color:var(--ink-2)">โอน</span>
-        <b>${tb.toLocaleString('th-TH')}฿</b></div></div>`;
-    }else if(cust.paid!==null){
-      strip=`<div class="cust done"><div class="chg">
+      strip=`<div class="cust done" style="margin:0 var(--s3) var(--s3)"><div class="chg">
+        <span style="font-size:13px;color:#4f46e5">โอน</span>
+        <b style="color:#4f46e5">${tb.toLocaleString('th-TH')}฿</b></div></div>`;
+    }else if(cust.paid!==null && (cust.paid-tb)>0){
+      strip=`<div class="cust done" style="margin:0 var(--s3) var(--s3)"><div class="chg">
         <span style="font-size:13px;color:var(--ink-2)">ทอน</span>
         <b>${(cust.paid-tb).toLocaleString('th-TH')}</b></div></div>`;
-    }else{
+    }else if(cust.paid===null){
       const notes=[]; const r10=Math.ceil(tb/10)*10;
       if(r10!==tb) notes.push(r10);
       [20,50,100,500,1000].filter(n=>n>tb).slice(0,2).forEach(n=>notes.push(n));
-      strip=`<div class="cust">
-        <div class="top"><span>ลูกค้าท่านนี้</span><b>${tb.toLocaleString('th-TH')}฿</b></div>
-        <div class="btns"><button data-note="0">พอดี</button>
-        ${[...new Set(notes)].map(n=>`<button data-note="${n}">${n}</button>`).join('')}
-        <button class="tf" data-tf="1">โอน</button></div></div>`;
+      const cashNotes = [...new Set(notes)];
+      strip=`<div style="display:flex;gap:8px;margin:0 var(--s3) var(--s3);align-items:stretch">
+        <div class="cust" style="flex:3;margin:0;display:flex;flex-direction:column;justify-content:space-between">
+          <div class="top"><span>ลูกค้าท่านนี้</span><b>${tb.toLocaleString('th-TH')}฿</b></div>
+          <div class="btns">
+            <button data-note="0">พอดี</button>
+            ${cashNotes.map(n=>`<button data-note="${n}">${n}</button>`).join('')}
+          </div>
+        </div>
+        <button class="tf" data-tf="1" style="flex:1;margin:0;background:#eef2ff;border:1px solid #818cf8;border-radius:var(--r);color:#4f46e5;display:flex;flex-direction:column;align-items:center;justify-content:center;font-size:16px;font-weight:600;cursor:pointer;min-height:76px;padding:0">
+          <span style="font-size:16px;font-weight:600">โอน</span>
+        </button>
+      </div>`;
     }
   }
   /* feed — tap or swipe left reveals delete; swipe right reveals paytog */
@@ -816,8 +826,9 @@ document.addEventListener('click',e=>{
   if(d.void!=null){ voidSale(d.void); return; }
   if(d.note!==undefined){ const v=+d.note;
     const tot=B(cust.ids.map(i=>S.sales.find(s=>s.id===i)).filter(s=>s&&live(s)).reduce((a,s)=>a+s.price,0));
-    cust.paid = v===0?tot:v; setPay(cust.ids,'cash');
-    clearTimeout(cust.tm); cust.tm=setTimeout(()=>{cust.ids=[];cust.paid=null;paint()},10000); return; }
+    setPay(cust.ids,'cash'); clearTimeout(cust.tm);
+    if(v===0 || v===tot){ cust.ids=[]; cust.paid=null; paint(); return; }
+    cust.paid=v; cust.tm=setTimeout(()=>{cust.ids=[];cust.paid=null;paint()},10000); paint(); return; }
   /* Gap 3: transfer keeps strip 10s showing confirmation */
   if(d.tf){ setPay(cust.ids,'transfer'); cust.paid='transfer';
     clearTimeout(cust.tm); cust.tm=setTimeout(()=>{cust.ids=[];cust.paid=null;paint()},10000); paint(); return; }
