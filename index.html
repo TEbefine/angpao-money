@@ -7,6 +7,10 @@
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="default">
 <title>ราพสลัด</title>
+<link rel="icon" type="image/webp" href="icon.webp">
+<link rel="apple-touch-icon" href="apple-touch-icon.png">
+<link rel="apple-touch-icon" sizes="192x192" href="icon-192.png">
+<link rel="apple-touch-icon" sizes="512x512" href="icon-512.png">
 <link rel="manifest" href="manifest.webmanifest">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -55,16 +59,19 @@ h2.ttl{font-size:17px;font-weight:600;margin:var(--s4) var(--s3) var(--s2)}
 /* --- sell grid --- */
 .grid{display:grid;grid-template-columns:1fr 1fr;gap:var(--s2);padding:var(--s3)}
 .grid>:first-child:nth-last-child(odd){grid-column:span 2}
-.tile{background:var(--card);border:1px solid var(--line);border-radius:var(--r);
-  overflow:hidden;text-align:left;transition:transform .12s var(--ease);position:relative}
+.tile{background:var(--card);border:1px solid var(--line);border-radius:12px;
+  overflow:hidden;text-align:left;transition:transform .12s var(--ease),box-shadow .12s var(--ease);position:relative;
+  box-shadow:0 1px 3px rgba(0,0,0,0.04)}
 .tile:active{transform:scale(.97)}
 .tile.off{border-style:dashed;opacity:.38}
 .tile.off:active{transform:none}
-.tile .pic{height:70px;display:grid;place-items:center;background:var(--ready-bg);
-  background-size:cover;background-position:center;position:relative}
-.tile .n{position:absolute;top:6px;right:6px;background:var(--card);border-radius:11px;
-  min-width:28px;text-align:center;padding:1px 7px;font-family:var(--mono);
-  font-size:14px;font-weight:500;color:var(--ready)}
+.tile .pic{height:110px;display:grid;place-items:center;background:var(--ready-bg);
+  background-size:cover;background-position:center;background-repeat:no-repeat;position:relative;
+  border-bottom:1px solid var(--line)}
+.tile .n{position:absolute;top:8px;right:8px;background:rgba(255,255,255,0.92);border-radius:12px;
+  min-width:28px;text-align:center;padding:2px 8px;font-family:var(--mono);
+  font-size:14px;font-weight:600;color:var(--ready);box-shadow:0 2px 6px rgba(0,0,0,0.12);
+  backdrop-filter:blur(4px)}
 .tile .cap{padding:8px 10px;display:flex;align-items:baseline;gap:6px}
 .tile .cap b{font-weight:500;font-size:14px;flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .tile .cap i{font-style:normal;font-family:var(--mono);font-size:12px;color:var(--ink-3)}
@@ -132,6 +139,8 @@ nav{position:fixed;bottom:0;left:0;right:0;max-width:520px;margin:0 auto;
 nav button{padding:9px 0 11px;display:grid;justify-items:center;gap:2px;color:var(--ink-3);font-size:10px}
 nav button.on{color:var(--ink)}
 nav button svg{width:20px;height:20px;stroke:currentColor;fill:none;stroke-width:1.7;stroke-linecap:round;stroke-linejoin:round}
+nav button .nav-img-icon{width:22px;height:22px;border-radius:6px;object-fit:cover;transition:transform .15s var(--ease),filter .15s}
+nav button.on .nav-img-icon{transform:scale(1.15);filter:drop-shadow(0 2px 4px rgba(107,144,128,0.4))}
 
 /* --- ประวัติ --- */
 .day{margin-bottom:10px}
@@ -203,6 +212,18 @@ const SEED_ITEMS = [
   ['แซลมอน',5900],['กุ้ง',4900],['ทูน่า',4500],['คาริยากิ',4500],['สไปซี่',4500],
   ['หม่าล่า',4500],['อะโวคาโด',4500],['ไส้กรอกไก่',3900],['ปูอัด',3900]
 ];
+const DEFAULT_PHOTOS = {
+  'แซลมอน': 'หน้าแซลมอน.webp',
+  'กุ้ง': 'หน้ากุ้ง.webp',
+  'ทูน่า': 'หน้าทูน่า.webp',
+  'คาริยากิ': 'หน้าไก่เทอริยากิ.webp',
+  'สไปซี่': 'หน้าไก่สไปซี่.webp',
+  'หม่าล่า': 'หน้าไก่หม่าล่า.webp',
+  'อะโวคาโด': 'หน้าอะโวคาโด้.webp',
+  'ไส้กรอกไก่': 'หน้าใส้กรอกไก่.webp',
+  'ปูอัด': 'หน้าปูอัด.webp'
+};
+const getPhoto = i => i ? (i.photo || DEFAULT_PHOTOS[i.name] || '') : '';
 const SEED_CATS = [
   ['ผัก','shared'],['แป้ง · น้ำจิ้ม','shared'],['หน้าโรล','topping'],
   ['ของใช้','shared'],['อุปกรณ์','equipment']
@@ -827,9 +848,13 @@ const ICON={
 function paint(){
   const sh=shift();
   $('#nav').innerHTML=[['sell','ขาย','sell'],['buy','ซื้อของ','buy'],
-    ['sum','สรุป','sum'],['hist','ประวัติ','hist'],['set','ตั้งค่า','set']].map(([r,l,ic])=>
-    `<button data-go="${r}" class="${route===r?'on':''}">
-      <svg viewBox="0 0 24 24">${ICON[ic]}</svg>${l}</button>`).join('');
+    ['sum','สรุป','sum'],['hist','ประวัติ','hist'],['set','ตั้งค่า','set']].map(([r,l,ic])=>{
+    const iconHtml = ic === 'sell'
+      ? `<img src="icon.webp" class="nav-img-icon" alt="${l}">`
+      : `<svg viewBox="0 0 24 24">${ICON[ic]}</svg>`;
+    return `<button data-go="${r}" class="${route===r?'on':''}">
+      ${iconHtml}${l}</button>`;
+  }).join('');
   $('#chrome').innerHTML = route==='sell' ? barSell(sh) : '';
   $('#view').innerHTML =
     route==='sell' ? (sh?viewSell(sh):viewClosed())
@@ -843,6 +868,7 @@ function paint(){
 function barSell(sh){
   if(!sh) return '';
   return `<div class="bar">
+    <img src="icon.webp" style="width:24px;height:24px;border-radius:6px;object-fit:cover;flex:none" alt="logo">
     <span class="dot"></span><span>เปิดอยู่</span>
     <span class="meta mono">${clock(sh.opened_at)} · ${dur(Date.now()-sh.opened_at)}</span>
     <span class="sp">
@@ -872,12 +898,13 @@ function viewSell(sh){
   const tiles=S.items.map(i=>{
     const m=sh.menu[i.id]; if(!m) return '';
     const isOn=m.on;
-    const pic=i.photo?`background-image:url('${esc(i.photo)}')`:'';
+    const photoUrl=getPhoto(i);
+    const pic=photoUrl?`background-image:url('${esc(photoUrl)}')`:'';
     /* low-stock: find goods linked to this item */
     const linkedGoods=S.goods.filter(g=>g.item_id===i.id && !g.archived);
     const isLow=linkedGoods.some(g=>g.low_stock);
     if(!isOn) return `<button class="tile off" data-reenable="${i.id}">
-      <div class="pic"></div>
+      <div class="pic" style="${pic}"></div>
       <div class="cap"><b>${esc(i.name)}</b></div></button>`;
     /* per-roll margin hint */
     const unitCost=c_info.sharedPer+(c_info.topPer[i.id]||0);
@@ -911,23 +938,33 @@ function viewSell(sh){
       if(seen[s.item_id]){ seen[s.item_id].qty++; seen[s.item_id].total+=s.price; }
       else { const entry={item_id:s.item_id,name:s.item_name,unitPrice:s.price,qty:1,total:s.price}; seen[s.item_id]=entry; grouped.push(entry); }
     });
-    const editableOrderList=grouped.map(g=>`<div style="display:flex;align-items:center;gap:6px;padding:6px 0;border-bottom:1px solid var(--line)">
-      <span style="flex:1;font-size:14px">${esc(g.name)}</span>
-      <div style="display:flex;align-items:center;gap:0">
-        <button data-custminus="${g.item_id}" style="width:30px;height:30px;border:1px solid var(--line-2);border-radius:6px 0 0 6px;background:var(--card);color:var(--pause);font-size:16px;font-weight:600;display:grid;place-items:center;cursor:pointer">−</button>
-        <span class="mono" style="font-size:14px;min-width:28px;text-align:center;border-top:1px solid var(--line-2);border-bottom:1px solid var(--line-2);height:30px;line-height:30px;background:var(--card)">${g.qty}</span>
-        <button data-custplus="${g.item_id}" style="width:30px;height:30px;border:1px solid var(--line-2);border-radius:0 6px 6px 0;background:var(--card);color:var(--ready);font-size:16px;font-weight:600;display:grid;place-items:center;cursor:pointer">+</button>
-      </div>
-      <span class="mono" style="font-size:13px;color:var(--ink-2);min-width:50px;text-align:right">${money(g.total)}฿</span>
-    </div>`).join('');
+    const editableOrderList=grouped.map(g=>{
+      const photoUrl=getPhoto(item(g.item_id));
+      const imgTag=photoUrl?`<img src="${esc(photoUrl)}" style="width:28px;height:28px;border-radius:6px;object-fit:cover;flex:none">`:'';
+      return `<div style="display:flex;align-items:center;gap:8px;padding:6px 0;border-bottom:1px solid var(--line)">
+        ${imgTag}
+        <span style="flex:1;font-size:14px;font-weight:500">${esc(g.name)}</span>
+        <div style="display:flex;align-items:center;gap:0">
+          <button data-custminus="${g.item_id}" style="width:30px;height:30px;border:1px solid var(--line-2);border-radius:6px 0 0 6px;background:var(--card);color:var(--pause);font-size:16px;font-weight:600;display:grid;place-items:center;cursor:pointer">−</button>
+          <span class="mono" style="font-size:14px;min-width:28px;text-align:center;border-top:1px solid var(--line-2);border-bottom:1px solid var(--line-2);height:30px;line-height:30px;background:var(--card)">${g.qty}</span>
+          <button data-custplus="${g.item_id}" style="width:30px;height:30px;border:1px solid var(--line-2);border-radius:0 6px 6px 0;background:var(--card);color:var(--ready);font-size:16px;font-weight:600;display:grid;place-items:center;cursor:pointer">+</button>
+        </div>
+        <span class="mono" style="font-size:13px;color:var(--ink-2);min-width:50px;text-align:right">${money(g.total)}฿</span>
+      </div>`;
+    }).join('');
 
-    const confirmedOrderList=grouped.map(g=>`<div style="display:flex;align-items:center;justify-content:space-between;padding:7px 0;border-bottom:1px solid var(--line)">
-      <div style="display:flex;align-items:center;gap:8px;flex:1;min-width:0">
-        <span style="font-size:14px;font-weight:500;color:var(--ink);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(g.name)}</span>
-        <span class="mono" style="font-size:12px;font-weight:500;padding:2px 8px;border-radius:10px;background:var(--ready-bg);color:var(--ready)">x${g.qty}</span>
-      </div>
-      <span class="mono" style="font-size:14px;font-weight:500;color:var(--ink);min-width:54px;text-align:right">${money(g.total)}฿</span>
-    </div>`).join('');
+    const confirmedOrderList=grouped.map(g=>{
+      const photoUrl=getPhoto(item(g.item_id));
+      const imgTag=photoUrl?`<img src="${esc(photoUrl)}" style="width:24px;height:24px;border-radius:4px;object-fit:cover;flex:none">`:'';
+      return `<div style="display:flex;align-items:center;justify-content:space-between;padding:7px 0;border-bottom:1px solid var(--line)">
+        <div style="display:flex;align-items:center;gap:8px;flex:1;min-width:0">
+          ${imgTag}
+          <span style="font-size:14px;font-weight:500;color:var(--ink);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(g.name)}</span>
+          <span class="mono" style="font-size:12px;font-weight:500;padding:2px 8px;border-radius:10px;background:var(--ready-bg);color:var(--ready)">x${g.qty}</span>
+        </div>
+        <span class="mono" style="font-size:14px;font-weight:500;color:var(--ink);min-width:54px;text-align:right">${money(g.total)}฿</span>
+      </div>`;
+    }).join('');
 
     if(cust.paid==='transfer'){
       strip=`<div class="cust done" style="margin:0 var(--s3) var(--s3);padding:14px;background:#f5f3ff;border:1.5px solid #6366f1;border-radius:var(--r)">
@@ -1203,10 +1240,15 @@ function totalProfit(){
 
 /* ── ตั้งค่า ── */
 function viewSet(){
-  const items=S.items.map(i=>`<div class="li">
-    <span class="g">${esc(i.name)}</span>
-    <button class="chip" data-photo="${i.id}">${i.photo?'เปลี่ยนรูป':'ใส่รูป'}</button>
-    <button class="num" data-iprice="${i.id}">${money(i.price)}฿</button></div>`).join('');
+  const items=S.items.map(i=>{
+    const pUrl=getPhoto(i);
+    const imgHtml=pUrl?`<img src="${esc(pUrl)}" style="width:32px;height:32px;border-radius:6px;object-fit:cover;flex:none">`:'';
+    return `<div class="li">
+      ${imgHtml}
+      <span class="g">${esc(i.name)}</span>
+      <button class="chip" data-photo="${i.id}">${i.photo?'เปลี่ยนรูป':(pUrl?'รูปหลัก':'ใส่รูป')}</button>
+      <button class="num" data-iprice="${i.id}">${money(i.price)}฿</button></div>`;
+  }).join('');
   const staff=S.staff.map((p,ix)=>`<div class="li">
     <span class="g">${esc(p.name)}${p.test?' <small>· ทดสอบ</small>':''}</span>
     <button class="chip mono" data-pin="${ix}">${p.pin}</button></div>`).join('');
