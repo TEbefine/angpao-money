@@ -563,15 +563,19 @@ function viewBuy(){
         ? `<span class="mono" style="font-size:11px;color:var(--pause)">${l.price>g.last_price?'+':''}${money(l.price-g.last_price)}</span>`:'';
       const uStr = fmtUnit(g.pack_size, g.unit);
       const uTag = uStr ? `<small> · ${uStr}</small>` : '';
+      const isG = g.unit === 'g';
+      const lQty = l ? (l.qty ?? (isG ? g.pack_size : (l.packs || 1))) : (isG ? g.pack_size : 1);
+      const qtyBtnLabel = fmtUnit(lQty, g.unit) || lQty;
+      const lineCost = l ? (isG ? l.price : l.price * (l.packs || 1)) : price;
+
       return `<div class="row" data-gid="${g.id}">
         <div class="act"><div class="r" data-delgoods="${g.id}">ลบ</div></div>
         <div class="in li" style="border-bottom:0;background:var(--card)">
           <button data-tick="${g.id}" style="font-size:19px;width:28px;color:${on?'var(--ready)':'var(--ink-3)'}">${on?'☑':'☐'}</button>
           <span class="g"><b style="font-weight:400">${esc(g.name)}</b>${storeTag}${uTag}</span>
           ${low}${diff}
-          ${on?`<button class="chip" data-promo="${g.id}" style="padding:3px 8px;min-height:0;${l.promo?'border-color:var(--pause);color:var(--pause)':''}">โปรฯ</button>
-          <button class="chip mono" data-packs="${g.id}" style="padding:3px 10px;min-height:0">${l.packs}</button>`:''}
-          <button class="num" data-price="${g.id}" style="color:${on?'var(--ink)':'var(--ink-3)'}">${money(price)}</button>
+          ${on ? `<button class="chip mono" data-packs="${g.id}" style="padding:3px 10px;min-height:0;color:var(--ready);border-color:var(--ready)">${qtyBtnLabel}</button>` : ''}
+          <button class="num" data-price="${g.id}" style="color:${on?'var(--ink)':'var(--ink-3)'}">${money(lineCost)}</button>
         </div>
       </div>`}).join('');
     const emptyMsg = !gs.length ? `<div class="li" style="color:var(--ink-3);font-size:13px;justify-content:center">ไม่มีรายการใน ${esc(d.store)}</div>` : '';
@@ -579,7 +583,10 @@ function viewBuy(){
       <div class="card">${rows}${emptyMsg}
       <div class="li" data-addgoods="${c.id}" style="cursor:pointer;color:var(--ready);font-size:14px">＋ เพิ่มของในหมวดนี้</div></div>`;
   }).join('');
-  const sum=Object.entries(d.lines).reduce((a,[,l])=>a+l.price*l.packs,0);
+  const sum=Object.entries(d.lines).reduce((a,[gid,l])=>{
+    const g=S.goods.find(x=>x.id===gid);
+    return a + ((g && g.unit==='g') ? l.price : l.price * (l.packs||1));
+  },0);
   const act=d.total===''?null:Math.round(parseFloat(d.total||0)*100);
   const gap=act===null?0:act-sum;
   return `<h2 class="ttl">ซื้อของ</h2><p class="sub mono">${d.date}</p>
@@ -601,13 +608,16 @@ function saveBuy(){
   const d=buyDraft;
   const lines=Object.entries(d.lines).map(([gid,l])=>{
     const g=S.goods.find(x=>x.id===gid), c=catOf(g);
-    if(!l.promo){ g.last_price=l.price; g.last_store=d.store; }
+    g.last_price=l.price; g.last_store=d.store;
     g.low_stock=false;
+    const isG = g.unit === 'g';
+    const packsCount = isG ? 1 : (l.packs || 1);
+    const packSize = isG ? (l.qty || g.pack_size || 1000) : g.pack_size;
     return {id:uid(),goods_id:gid,goods_name:g.name,bucket:c.bucket,item_id:g.item_id,
-      packs:l.packs,pack_size:g.pack_size,unit:g.unit,price:l.price,is_promo:!!l.promo};
+      packs:packsCount,pack_size:packSize,unit:g.unit,price:l.price,is_promo:false};
   });
   if(!lines.length){ alert('ยังไม่ได้ติ๊กอะไรเลย'); return; }
-  const sum=lines.reduce((a,l)=>a+l.price*l.packs,0);
+  const sum=lines.reduce((a,l)=>a+(l.unit==='g'?l.price:l.price*l.packs),0);
   const act=d.total===''?sum:Math.round(parseFloat(d.total)*100);
   if(act!==sum) lines.push({id:uid(),goods_id:null,goods_name:'ส่วนต่าง VAT/โปรฯ',
     bucket:'shared',item_id:null,packs:1,pack_size:1,unit:'pcs',price:act-sum,is_promo:false});
@@ -773,6 +783,19 @@ function tryPin(p){
 
 /* ═══════════════ 8 · events ═══════════════ */
 document.addEventListener('click',e=>{
+  const openRow = e.target.closest('.row.sl, .row.sr');
+  if(openRow){
+    const delBtn = e.target.closest('[data-delgoods],[data-void]');
+    if(delBtn){
+      const d = delBtn.dataset;
+      if(d.delgoods){ delGoods(d.delgoods); return; }
+      if(d.void!=null){ voidSale(d.void); return; }
+    }
+    document.querySelectorAll('.row').forEach(el=>el.classList.remove('sl','sr'));
+    return;
+  }
+  document.querySelectorAll('.row.sl, .row.sr').forEach(el=>el.classList.remove('sl','sr'));
+
   const t=e.target.closest('[data-k],[data-go],[data-sell],[data-reenable],[data-note],[data-tf],[data-sheet],[data-sheet2],[data-close-sheet],[data-backdrop],[data-doopen],[data-float],[data-floatx],[data-mtog],[data-mprice],[data-doclose],[data-store],[data-addstore],[data-tick],[data-packs],[data-price],[data-promo],[data-addgoods],[data-delgoods],[data-savebuy],[data-iprice],[data-photo],[data-pin],[data-forget],[data-sbsave],[data-export],[data-lock],[data-paytog],[data-void]');
   if(!t) return; const d=t.dataset;
 
@@ -812,11 +835,22 @@ document.addEventListener('click',e=>{
   if(d.store){ buyDraft.store=d.store; paint(); return; }
   if(d.addstore){ const v=prompt('ชื่อร้านใหม่'); if(v){ S.stores.push(v); buyDraft.store=v; save(); paint() } return; }
   if(d.tick){ const L=buyDraft.lines; if(L[d.tick]) delete L[d.tick];
-    else { const g=S.goods.find(x=>x.id===d.tick); L[d.tick]={price:g.last_price??0,packs:1,promo:false} }
+    else { const g=S.goods.find(x=>x.id===d.tick); const isG=g&&g.unit==='g';
+      L[d.tick]={price:g?g.last_price??0:0, packs:isG?1:1, qty:isG?(g.pack_size||500):1} }
     paint(); return; }
-  if(d.packs){ const v=prompt('กี่แพ็ค',buyDraft.lines[d.packs].packs);
-    if(v!==null){ buyDraft.lines[d.packs].packs=Math.max(1,parseFloat(v)||1); paint() } return; }
-  if(d.promo){ const l=buyDraft.lines[d.promo]; l.promo=!l.promo; paint(); return; }
+  if(d.packs){ const g=S.goods.find(x=>x.id===d.packs), line=buyDraft.lines[d.packs];
+    if(line && g){ const isG=g.unit==='g';
+      const curQty = line.qty ?? (isG ? (g.pack_size||500) : (line.packs||1));
+      const promptMsg = isG ? `${g.name} — ปริมาณที่ซื้อ (กรัม)` : `${g.name} — จำนวนที่ซื้อ (${fmtUnit(1,g.unit)})`;
+      const v=prompt(promptMsg, curQty);
+      if(v!==null){ const newQty=Math.max(1,parseFloat(v)||1);
+        line.qty=newQty; line.packs=isG?1:newQty;
+        if(isG && g.last_price && g.pack_size){
+          line.price=Math.round((g.last_price / g.pack_size) * newQty);
+        }
+        paint();
+      }
+    } return; }
   if(d.price){ const g=S.goods.find(x=>x.id===d.price);
     const cur=buyDraft.lines[d.price]?buyDraft.lines[d.price].price:(g.last_price??0);
     const v=prompt(g.name+' — ราคาต่อแพ็ค (บาท)',B(cur));
@@ -967,7 +1001,15 @@ document.addEventListener('click',e=>{
     r.classList.remove('sl','sr'); return;
   }
   document.querySelectorAll('.row').forEach(el=>{ if(el!==r) el.classList.remove('sl','sr'); });
-  r.classList.add('sl');
+  if(r.closest('.feed')){
+    r.classList.add('sl');
+  }else if(r.dataset.gid){
+    const gid=r.dataset.gid, L=buyDraft.lines;
+    if(L[gid]) delete L[gid];
+    else { const g=S.goods.find(x=>x.id===gid); const isG=g&&g.unit==='g';
+      L[gid]={price:g?g.last_price??0:0, packs:isG?1:1, qty:isG?(g.pack_size||500):1} }
+    paint();
+  }
 });
 
 /* ═══════════════ 9 · boot ═══════════════ */
