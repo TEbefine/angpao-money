@@ -246,7 +246,19 @@ function load(){
   document.body.classList.toggle('test',MODE==='test');
   $('#tflag').classList.toggle('hide',MODE!=='test');
 }
-const save = () => { localStorage[KEY(MODE)] = JSON.stringify(S); };
+const save = () => {
+  try{ localStorage[KEY(MODE)] = JSON.stringify(S) }
+  catch(e){
+    /* quota blown — it is almost always the base64 menu photos.
+       Drop those rather than silently lose today's takings. */
+    try{
+      S.items.forEach(i=>i.photo='');
+      localStorage[KEY(MODE)] = JSON.stringify(S);
+      console.warn('quota: dropped menu photos to keep sales');
+      alert('พื้นที่ในเครื่องเต็ม — ลบรูปเมนูออกแล้ว ยอดขายยังอยู่ครบ');
+    }catch(e2){ alert('บันทึกไม่ได้ พื้นที่เต็ม — ไปตั้งค่า → ส่งออกข้อมูล ทันที') }
+  }
+};
 
 /* ── derived ── */
 const shift    = () => S.shifts.find(s=>!s.closed_at);
@@ -376,7 +388,15 @@ async function flush(){
         apikey:S.sb.key,Authorization:'Bearer '+S.sb.key,'Content-Type':'application/json',
         Prefer:'resolution=merge-duplicates,return=minimal'
       },body:JSON.stringify(job.row)});
-      if(!r.ok && r.status!==409) throw new Error(await r.text());
+      if(!r.ok && r.status!==409){
+        if(r.status>=400 && r.status<500){
+          /* the row itself is malformed — retrying forever would freeze
+             every sale queued behind it. Park it and keep going. */
+          (S.dead = S.dead||[]).push({job,err:(await r.text()).slice(0,300),t:Date.now()});
+          S.outbox.shift(); save(); continue;
+        }
+        throw new Error(await r.text());          /* 5xx / offline → retry later */
+      }
       S.outbox.shift(); save();
     }
   }catch(e){ console.warn('sync',e.message) }
@@ -394,25 +414,57 @@ async function pull(){
     /* incremental: after the first sync we only ask for what changed */
     const since = S.pulledAt ? `&updated_at=gt.${encodeURIComponent(S.pulledAt)}` : '';
     const at    = new Date().toISOString();
-    const [sh,sa,pc,it,ct,gd] = await Promise.all([
+    const [sh,sa,pc,it,ct,gd,pu,pl] = await Promise.all([
       get(T.shifts,`&is_test=eq.${test}${since}`),
       get(T.sales ,`&is_test=eq.${test}${since}`),
       get(T.pays  , S.pulledAt ? `&created_at=gt.${encodeURIComponent(S.pulledAt)}` : ''),
-      get('items',`&order=sort`), get('cats',`&order=sort`), get('goods',`&archived=eq.false`)]);
-    /* shared catalog — MERGE by id, never replace the array. Dropping a
-       local row would orphan every old sale that points at it. */
-    const mergeCat=(local,remote,map)=>remote.forEach(r=>{
-      const i=local.findIndex(x=>x.id===r.id);
-      if(i<0) local.push(map(r,null)); else Object.assign(local[i],map(r,local[i]));
+      get('items',`&order=sort`), get('cats',`&order=sort`), get('goods',`&archived=eq.false`),
+      get(T.purchases,`&is_test=eq.${test}${since}`),
+      get('purchase_lines', S.pulledAt ? `&created_at=gt.${encodeURIComponent(S.pulledAt)}` : '')]);
+
+    /* ── catalog ──────────────────────────────────────────────────
+       A phone that has never done business here is still carrying the
+       factory seed from blank(). If the shop already has a catalog on
+       the server, ADOPT it wholesale: merging would show a double menu,
+       and pushing would spread this phone's throwaway ids to everyone. */
+    const virgin = !S.pulledAt && !S.sales.length && !S.purchases.length;
+    if(virgin && it.length){
+      S.cats  = ct.map(r=>({id:r.id,name:r.name,bucket:r.bucket,sort:r.sort}));
+      S.items = it.map(r=>({id:r.id,name:r.name,price:r.price,sort:r.sort,
+        photo:'',active:r.active}));
+      S.goods = gd.map(r=>({id:r.id,name:r.name,category_id:r.category_id,
+        item_id:r.item_id,unit:r.unit,pack_size:r.pack_size,last_price:r.last_price,
+        last_store:r.last_store||'',archived:false}));
+    }else{
+      /* this phone has real history — MERGE by id, never replace the
+         array, or old sales lose the item they point at */
+      const mergeCat=(local,remote,map)=>remote.forEach(r=>{
+        const i=local.findIndex(x=>x.id===r.id);
+        if(i<0) local.push(map(r,null)); else Object.assign(local[i],map(r,local[i]));
+      });
+      mergeCat(S.items,it,(r,cur)=>({id:r.id,name:r.name,price:r.price,sort:r.sort,
+        photo:(cur&&cur.photo)||'',active:r.active}));        // รูปเก็บไว้ในเครื่อง
+      mergeCat(S.cats ,ct,r=>({id:r.id,name:r.name,bucket:r.bucket,sort:r.sort}));
+      mergeCat(S.goods,gd,(r,cur)=>({id:r.id,name:r.name,category_id:r.category_id,
+        item_id:r.item_id,unit:r.unit,pack_size:r.pack_size,last_price:r.last_price,
+        last_store:r.last_store||'',archived:false,low_stock:cur?cur.low_stock:false}));
+      if(!S.pulledAt && !it.length) pushCatalog();   /* server empty → seed it from here */
+    }
+
+    /* ── purchases drive the whole cost engine ────────────────────
+       without them a new phone thinks every roll is pure profit */
+    const byPu={};
+    pl.forEach(l=>(byPu[l.purchase_id]=byPu[l.purchase_id]||[]).push({
+      id:l.id,goods_id:l.goods_id,goods_name:l.goods_name,bucket:l.bucket,
+      item_id:l.item_id,packs:Number(l.packs),pack_size:l.pack_size,
+      unit:l.unit,price:l.price,is_promo:l.is_promo}));
+    pu.forEach(r=>{
+      const cur=S.purchases.find(x=>x.id===r.id);
+      if(cur){ if(byPu[r.id] && byPu[r.id].length>cur.lines.length) cur.lines=byPu[r.id]; return; }
+      S.purchases.push({id:r.id,bought_at:r.bought_at,store:r.store,
+        total_actual:r.total_actual,lines:byPu[r.id]||[]});
     });
-    mergeCat(S.items,it,(r,cur)=>({id:r.id,name:r.name,price:r.price,sort:r.sort,
-      photo:(cur&&cur.photo)||'',active:r.active}));          // รูปเก็บไว้ในเครื่อง
-    mergeCat(S.cats ,ct,r=>({id:r.id,name:r.name,bucket:r.bucket,sort:r.sort}));
-    mergeCat(S.goods,gd,(r,cur)=>({id:r.id,name:r.name,category_id:r.category_id,
-      item_id:r.item_id,unit:r.unit,pack_size:r.pack_size,last_price:r.last_price,
-      last_store:r.last_store||'',archived:false,low_stock:cur?cur.low_stock:false}));
-    /* first ever sync from this phone: its catalog becomes the shop's */
-    if(!S.pulledAt) pushCatalog();
+    S.purchases.sort((a,b)=> a.bought_at<b.bought_at?-1:1);
     const mergeById=(local,remote,map)=>{const have=new Set(local.map(x=>x.id));
       remote.forEach(r=>{if(!have.has(r.id)) local.push(map(r))});};
     mergeById(S.shifts,sh,r=>({id:r.id,opened_at:+new Date(r.opened_at),
@@ -1018,7 +1070,7 @@ function viewSet(){
       <div class="li"><span class="g" style="color:var(--ink-3);font-size:13px">
         เครื่องนี้จำ ${esc(U?U.name:'-')} ไว้แล้ว</span>
         <button class="chip" data-forget="1">ลืมเครื่องนี้</button></div></div>
-    <div class="lbl"><span>Supabase</span><span>${S.sb.url?(S.outbox.length?'ค้าง '+S.outbox.length:'ซิงก์แล้ว'):'ยังไม่ต่อ'}</span></div>
+    <div class="lbl"><span>Supabase</span><span>${S.sb.url?(S.outbox.length?'ค้าง '+S.outbox.length:(S.dead&&S.dead.length?'ส่งไม่ได้ '+S.dead.length+' แถว':'ซิงก์แล้ว')):'ยังไม่ต่อ'}</span></div>
     <div class="card" style="padding:12px">
       <input id="sbu" placeholder="https://xxxx.supabase.co" value="${esc(S.sb.url)}" style="margin-bottom:8px">
       <input id="sbk" placeholder="anon public key" value="${esc(S.sb.key)}">
