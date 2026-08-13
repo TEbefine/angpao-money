@@ -727,6 +727,20 @@ function viewSet(){
 }
 
 /* ═══════════════ 6 · sheets ═══════════════ */
+function calcCloseTf(exp){
+  const ccEl = $('#cc'), ttEl = $('#tt');
+  if(!ccEl || !ttEl) return;
+  const ccStr = ccEl.value.trim();
+  if(ccStr === ''){
+    const sh = shift();
+    if(sh){ const st = shiftStats(sh); ttEl.value = st.tf ? B(st.tf) : ''; }
+    else { ttEl.value = ''; }
+    return;
+  }
+  const ccVal = parseFloat(ccStr) || 0;
+  const autoTf = Math.max(0, exp - ccVal);
+  ttEl.value = autoTf;
+}
 const SH={
   open(){ const last=S.shifts.filter(s=>s.closed_at).pop();
     const dflt=last?last.float_start:100000;
@@ -749,14 +763,22 @@ const SH={
       <div class="li"><button data-sheet2="close" style="width:100%;text-align:left;color:var(--pause)">ปิดร้าน · นับเงิน</button></div>
     </div><button class="wide" data-close-sheet="1" style="margin:8px 16px 16px">ยกเลิก</button>`)},
   close(){ const sh=shift(), st=shiftStats(sh);
+    const expTotal = B(sh.float_start + st.rev);
+    const defCash = B(sh.float_start + st.cash + st.unk);
+    const defTf = B(st.tf);
+    const unkText = st.unk ? ` · ไม่ระบุ <b>${money(st.unk)}</b>` : '';
     return wrap(`<h2 class="ttl">ปิดร้าน · นับเงิน</h2>
-      <p class="sub">ทอนตั้งต้น <span class="mono">${money(sh.float_start)}</span>
-        · ควรมี <span class="mono">${money(sh.float_start+st.cash+st.unk)}</span></p>
+      <div class="sub" style="line-height:1.5;margin-bottom:14px">
+        ทอนตั้งต้น <span class="mono">${money(sh.float_start)}</span> · ควรมีรวม <span class="mono">${money(sh.float_start+st.rev)}</span><br>
+        <span style="font-size:12px;color:var(--ink-2)">
+          (ขายได้ <span class="mono">${st.n}</span> ม้วน · สด <b>${money(st.cash)}</b> · โอน <b>${money(st.tf)}</b>${unkText})
+        </span>
+      </div>
       <div class="card" style="padding:12px">
-        <div class="lbl" style="margin:0 0 6px"><span>นับเงินสดได้</span></div>
-        <input id="cc" class="mono" inputmode="decimal" placeholder="0" style="text-align:right;margin-bottom:12px">
-        <div class="lbl" style="margin:0 0 6px"><span>ยอดโอนวันนี้ (ดูในแอปธนาคาร)</span></div>
-        <input id="tt" class="mono" inputmode="decimal" placeholder="0" style="text-align:right">
+        <div class="lbl" style="margin:0 0 6px"><span>นับเงินสดได้ (รวมเงินทอนตั้งต้น)</span></div>
+        <input id="cc" class="mono" inputmode="decimal" value="${defCash || ''}" placeholder="0" style="text-align:right;margin-bottom:12px" oninput="calcCloseTf(${expTotal})">
+        <div class="lbl" style="margin:0 0 6px"><span>ยอดโอนวันนี้</span></div>
+        <input id="tt" class="mono" inputmode="decimal" value="${defTf || ''}" placeholder="0" style="text-align:right">
       </div>
       <button class="wide go" data-doclose="1" style="margin:16px">จบวัน</button>
       <button class="wide" data-close-sheet="1" style="margin:0 16px 16px">ยังไม่ปิด</button>`)},
