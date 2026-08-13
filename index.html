@@ -507,8 +507,8 @@ function viewSell(sh){
         <button class="chip" data-void="${s.id}" style="padding:4px 10px;min-height:0;color:var(--pause);border-color:var(--pause)">ลบ</button>
       </div>
     </div>`}).join('');
-  return `${strip?`<div style="padding-top:12px">${strip}</div>`:''}
-    <div class="grid">${tiles}</div>
+  return `<div class="grid">${tiles}</div>
+    ${strip?`<div style="margin-bottom:12px">${strip}</div>`:''}
     <button class="wide" data-sheet="menu">แก้เมนูวันนี้
       <span class="mono" style="color:var(--ink-3)">${on.length}/${S.items.length}</span></button>
     ${rows.length?`<div class="lbl"><span>ล่าสุด</span><span>แตะเพื่อแก้ · ปัดซ้ายลบ · ปัดขวาสลับจ่าย</span></div>
