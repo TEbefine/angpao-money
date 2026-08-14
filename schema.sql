@@ -1,5 +1,5 @@
 -- ============================================================
---  ราพสลัด — Supabase schema  (project: rapsalad, ap-southeast-1)
+--  อั่งเปาการเงิน - สปริงโรส — Supabase schema  (project: rapsalad, ap-southeast-1)
 --  https://mqteglbrvtrlaxwlokap.supabase.co
 --
 --  ไฟล์นี้ = ของจริงที่รันอยู่บน production แล้ว

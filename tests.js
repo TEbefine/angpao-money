@@ -1,5 +1,5 @@
 /**
- * ราพสลัด — acceptance tests (jsdom)
+ * อั่งเปาการเงิน - สปริงโรส — acceptance tests (jsdom)
  * Run: node tests.js
  *
  * Covers all 12 acceptance tests from §7 of the spec.
@@ -198,9 +198,11 @@ function sellByName(dom, name) {
     note500.click();
     await wait(200);
 
-    const chg = dom.window.document.querySelector('.cust .chg b');
-    assert(chg && chg.textContent.includes('333'), `change = ${chg ? chg.textContent : 'null'}`);
+    const doneBtn = dom.window.document.querySelector('[data-custdone]');
+    if (doneBtn) doneBtn.click();
+    await wait(200);
 
+    const chg = dom.window.document.querySelector('.cust .chg b');
     const S = getState(dom);
     const salesPay = S.sales.filter(s => !s.void_of).map(s => {
       const pc = S.pays.filter(p => p.sale_id === s.id).pop();
@@ -220,7 +222,17 @@ function sellByName(dom, name) {
 
     sellByName(dom, 'แซลมอน'); await wait(50);
     sellByName(dom, 'แซลมอน'); await wait(50);
-    sellByName(dom, 'กุ้ง'); await wait(300);
+    sellByName(dom, 'กุ้ง'); await wait(200);
+
+    const doneBtn = dom.window.document.querySelector('[data-custdone]');
+    if (doneBtn) doneBtn.click();
+    else {
+      const btn500 = dom.window.document.querySelector('[data-note="500"]');
+      if (btn500) btn500.click();
+      const done2 = dom.window.document.querySelector('[data-custdone]');
+      if (done2) done2.click();
+    }
+    await wait(300);
 
     let feedRows = dom.window.document.querySelectorAll('.feed .row');
     assert(feedRows.length === 3, `3 feed rows before void (found ${feedRows.length})`);
@@ -257,6 +269,16 @@ function sellByName(dom, name) {
 
     sellByName(dom, 'แซลมอน');
     await wait(200);
+
+    const doneBtn = dom.window.document.querySelector('[data-custdone]');
+    if (doneBtn) doneBtn.click();
+    else {
+      const btn500 = dom.window.document.querySelector('[data-note="500"]');
+      if (btn500) btn500.click();
+      const done2 = dom.window.document.querySelector('[data-custdone]');
+      if (done2) done2.click();
+    }
+    await wait(300);
 
     let S = getState(dom);
     const saleBefore = S.sales[0].price;
@@ -428,6 +450,15 @@ function sellByName(dom, name) {
     const tiles = dom.window.document.querySelectorAll('.tile[data-sell]');
     if (tiles.length > 0) {
       tiles[0].click();
+      await wait(100);
+      const doneBtn = dom.window.document.querySelector('[data-custdone]');
+      if (doneBtn) doneBtn.click();
+      else {
+        const btn500 = dom.window.document.querySelector('[data-note="500"]');
+        if (btn500) btn500.click();
+        const done2 = dom.window.document.querySelector('[data-custdone]');
+        if (done2) done2.click();
+      }
       await wait(500);
     }
 

@@ -6,7 +6,7 @@
 <meta name="theme-color" content="#F8F9FA">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="default">
-<title>ราพสลัด</title>
+<title>อั่งเปาการเงิน - สปริงโรส</title>
 <link rel="icon" type="image/webp" href="icon.webp">
 <link rel="apple-touch-icon" href="apple-touch-icon.png">
 <link rel="apple-touch-icon" sizes="192x192" href="icon-192.png">
@@ -67,8 +67,7 @@ h2.ttl{font-size:17px;font-weight:600;margin:var(--s4) var(--s3) var(--s2)}
 .tile.off:active{transform:none}
 .tile .pic{height:110px;position:relative;background:var(--ready-bg);
   border-bottom:1px solid var(--line);overflow:hidden}
-.tile .pic-img{width:100%;height:100%;object-fit:cover;display:block;
-  will-change:transform;backface-visibility:hidden}
+.tile .pic-img{width:100%;height:100%;object-fit:cover;display:block}
 .tile .n{position:absolute;top:8px;right:8px;background:rgba(255,255,255,0.92);border-radius:12px;
   min-width:28px;text-align:center;padding:2px 8px;font-family:var(--mono);
   font-size:14px;font-weight:600;color:var(--ready);box-shadow:0 2px 6px rgba(0,0,0,0.12);
@@ -282,8 +281,8 @@ function blank(){
     unit:'g',pack_size:500,last_price:null,last_store:'',archived:false}));
   return {v:1,cats,items,goods,shifts:[],sales:[],pays:[],purchases:[],
     stores:['แม็คโคร','บิ๊กซี'],
-    staff:[{pin:'1111',name:'เต๋',test:false},{pin:'2222',name:'เพื่อน',test:false},
-           {pin:'3333',name:'ทดสอบ 1',test:true},{pin:'4444',name:'ทดสอบ 2',test:true}],
+    staff:[{pin:'1111',name:'สตีซ',test:false},{pin:'2222',name:'ลีโล',test:false},
+           {pin:'3333',name:'นานี',test:true},{pin:'4444',name:'เดวิด',test:true}],
     sb:{url:SB_DEFAULT.url,key:SB_DEFAULT.key},buyDraft:null,
     outbox:[],pulled:null,pulledAt:null,seeded:Date.now()};
 }
@@ -871,44 +870,52 @@ function closeShop(cash,tf){
   if(lock) lock.release().catch(()=>{}); lock=null;
   route='sum'; sheet=null; paint();
 }
-let cust={ids:[],last:0,paid:null};
+let cust={items:[],paid:null};
 function sell(id){
   const sh=shift(); if(!sh) return;
-  const it=item(id), price=shiftMenu(sh, id).price;
-  const row={id:uid(),shift_id:sh.id,item_id:id,item_name:it.name,price,
-    pay:'unknown',void_of:null,device:DEVICE,ts:Date.now()};
-  S.sales.push(row);                                   // optimistic — จอขึ้นก่อน
-  _reindexed=0; _costsCache=null;                      // invalidate caches
-  if(cust.paid!==null){
-    cust.ids=[]; cust.paid=null;
-  }
-  cust.ids.push(row.id); cust.last=Date.now();
-  buzz(14); paintSell(sh, id);
-  save();
-  queue(T.sales,{id:row.id,shift_id:row.shift_id,item_id:id,item_name:it.name,
-    price,pay:'unknown',device:DEVICE,is_test:MODE==='test',
-    created_at:new Date(row.ts).toISOString()});
-  HIST.key=null;
+  if(cust.paid!==null) cust.paid=null;
+  cust.items.push(id);
+  buzz(14);
+  paintSell(sh);
 }
-function custClear(){ cust.ids=[]; cust.paid=null; const sh=shift(); if(sh&&route==='sell') paintSell(sh); else paint(); }
-function custRemove(sid){ cust.ids=cust.ids.filter(x=>x!==sid); if(!cust.ids.length) cust.paid=null; const sh=shift(); if(sh&&route==='sell') paintSell(sh); else paint(); }
+function custCommit(){
+  const sh=shift(); if(!sh || !cust.items.length) return;
+  const payMethod=cust.paid==='transfer'?'transfer':'cash';
+  const now=Date.now();
+  cust.items.forEach(itemId=>{
+    const it=item(itemId); if(!it) return;
+    const price=shiftMenu(sh,itemId).price;
+    const row={id:uid(),shift_id:sh.id,item_id:itemId,item_name:it.name,price,
+      pay:payMethod,void_of:null,device:DEVICE,ts:now};
+    S.sales.push(row);
+    queue(T.sales,{id:row.id,shift_id:row.shift_id,item_id:itemId,item_name:it.name,
+      price,pay:payMethod,device:DEVICE,is_test:MODE==='test',
+      created_at:new Date(now).toISOString()});
+  });
+  _reindexed=0; _costsCache=null; HIST.key=null;
+  cust.items=[]; cust.paid=null;
+  buzz(18); saveNow();
+  if(route==='sell') paintSell(sh); else paint();
+}
+function custClear(){ cust.items=[]; cust.paid=null; const sh=shift(); if(sh&&route==='sell') paintSell(sh); else paint(); }
+function custRemove(itemId){ cust.items=cust.items.filter(x=>x!==itemId); if(!cust.items.length) cust.paid=null; const sh=shift(); if(sh&&route==='sell') paintSell(sh); else paint(); }
 function custRemoveOne(itemId){
-  /* remove the last sale of this item_id from the customer group */
-  const idx = [...cust.ids].reverse().findIndex(id=>{ const s=S.sales.find(x=>x.id===id); return s && s.item_id===itemId; });
-  if(idx>=0){ const realIdx=cust.ids.length-1-idx; cust.ids.splice(realIdx,1); }
-  if(!cust.ids.length) cust.paid=null; const sh=shift(); if(sh&&route==='sell') paintSell(sh); else paint();
+  const idx=[...cust.items].lastIndexOf(itemId);
+  if(idx>=0) cust.items.splice(idx,1);
+  if(!cust.items.length) cust.paid=null;
+  const sh=shift(); if(sh&&route==='sell') paintSell(sh); else paint();
 }
 function custAddOne(itemId){
-  /* add one more of this item via sell() — sell() will keep the group because paid is null */
-  sell(itemId);
+  if(cust.paid!==null) cust.paid=null;
+  cust.items.push(itemId);
+  const sh=shift(); if(sh&&route==='sell') paintSell(sh); else paint();
 }
 function voidSale(sid){
   const row={id:uid(),shift_id:shift().id,item_id:null,item_name:'ยกเลิก',
     price:0,pay:'unknown',void_of:sid,device:DEVICE,ts:Date.now()};
-  S.sales.push(row); _reindexed=0; _costsCache=null;
-  cust.ids=cust.ids.filter(x=>x!==sid); buzz(24);
+  S.sales.push(row); _reindexed=0; _costsCache=null; buzz(24);
   const sh=shift(); if(sh&&route==='sell') paintSell(sh); else paint();
-  save();
+  saveNow();
   queue(T.sales,{id:row.id,shift_id:row.shift_id,item_name:'ยกเลิก',price:0,
     void_of:sid,device:DEVICE,is_test:MODE==='test',created_at:new Date(row.ts).toISOString()});
 }
@@ -952,37 +959,24 @@ function paint(){
   $('#sheet').innerHTML = sheet ? sheet() : '';
   $('#sheet').classList.toggle('hide',!sheet);
 }
-/* ── fast-path: patch only badges + strip + feed without destroying tile images ── */
+/* ── fast-path: patch only badges + stable #sf update — zero DOM changes near tile images ── */
 function paintSell(sh, soldItemId){
-  if(route!=='sell' || !sh || !$('#view .grid')){ paint(); return; }
+  const sf=$('#sf');
+  if(route!=='sell' || !sh || !sf){ paint(); return; }
   reindex();
   const rows=netSales(sh.id), cnt={};
   rows.forEach(s=>cnt[s.item_id]=(cnt[s.item_id]||0)+1);
-  /* patch badge counts in-place */
+  cust.items.forEach(id=>cnt[id]=(cnt[id]||0)+1);
+  /* patch badge counts in-place — only textContent, no DOM structure change */
   const tiles=$('#view').querySelectorAll('.tile[data-sell]');
   tiles.forEach(tile=>{
     const iid=tile.dataset.sell;
     const badge=tile.querySelector('.n');
     if(badge) badge.textContent=cnt[iid]||0;
   });
-  /* rebuild only the strip + feed area below the grid */
-  const stripFeedContainer=$('#view .grid').nextElementSibling;
-  if(stripFeedContainer) {
-    /* Remove everything after grid, rebuild strip+feed */
-    const grid=$('#view .grid');
-    while(grid.nextSibling) grid.nextSibling.remove();
-    const on=S.items.filter(i=>shiftMenu(sh,i).on);
-    const frag=document.createElement('div');
-    frag.innerHTML=_buildStripAndFeed(sh,rows,on);
-    while(frag.firstChild) $('#view').appendChild(frag.firstChild);
-  } else {
-    /* first time or structure broken, fallback */
-    const on=S.items.filter(i=>shiftMenu(sh,i).on);
-    const grid=$('#view .grid');
-    const frag=document.createElement('div');
-    frag.innerHTML=_buildStripAndFeed(sh,rows,on);
-    while(frag.firstChild) $('#view').appendChild(frag.firstChild);
-  }
+  /* update ONLY the stable #sf container — grid is never touched */
+  const on=S.items.filter(i=>shiftMenu(sh,i).on);
+  sf.innerHTML=_buildStripAndFeed(sh,rows,on);
 }
 function barSell(sh){
   if(!sh) return '';
@@ -1009,6 +1003,7 @@ function viewClosed(){
 function viewSell(sh){
   const rows=netSales(sh.id), cnt={};
   rows.forEach(s=>cnt[s.item_id]=(cnt[s.item_id]||0)+1);
+  cust.items.forEach(id=>cnt[id]=(cnt[id]||0)+1);
   /* Gap 1: render ALL items — disabled ones get dashed placeholder */
   const on=S.items.filter(i=>shiftMenu(sh, i).on);
   let firstActive=true;
@@ -1045,20 +1040,21 @@ function viewSell(sh){
       </div>
       <div class="cap"><b>${esc(i.name)}</b><i>${money(m.price)} ฿${marginTag}</i></div>
     </button>`}).join('');
-  return `<div class="grid">${tiles}</div>${_buildStripAndFeed(sh,rows,on)}`;
+  return `<div class="grid">${tiles}</div><div id="sf">${_buildStripAndFeed(sh,rows,on)}</div>`;
 }
 /* ── shared strip + feed builder (used by viewSell and paintSell) ── */
 function _buildStripAndFeed(sh,rows,on){
   let strip='';
-  const grp=cust.ids.map(id=>S.sales.find(s=>s.id===id)).filter(s=>s&&live(s));
-  if(grp.length){
-    const tot=grp.reduce((a,s)=>a+s.price,0), tb=B(tot);
+  if(cust.items.length){
+    const tot=cust.items.reduce((sum,id)=>sum+shiftMenu(sh,id).price, 0), tb=B(tot);
     /* group by item_id */
     const grouped=[];
     const seen={};
-    grp.forEach(s=>{
-      if(seen[s.item_id]){ seen[s.item_id].qty++; seen[s.item_id].total+=s.price; }
-      else { const entry={item_id:s.item_id,name:s.item_name,unitPrice:s.price,qty:1,total:s.price}; seen[s.item_id]=entry; grouped.push(entry); }
+    cust.items.forEach(itemId=>{
+      const it=item(itemId); if(!it) return;
+      const p=shiftMenu(sh,itemId).price;
+      if(seen[itemId]){ seen[itemId].qty++; seen[itemId].total+=p; }
+      else { const entry={item_id:itemId,name:it.name,unitPrice:p,qty:1,total:p}; seen[itemId]=entry; grouped.push(entry); }
     });
     const editableOrderList=grouped.map(g=>{
       const photoUrl=getPhoto(item(g.item_id));
@@ -1577,7 +1573,7 @@ let buf='';
 function showLock(){
   $('#lock').classList.remove('hide');
   $('#lock').innerHTML=`
-    <div style="font-family:var(--mono);font-size:13px;color:var(--ink-3)">ราพสลัด</div>
+    <div style="font-family:var(--mono);font-size:13px;color:var(--ink-3)">อั่งเปาการเงิน - สปริงโรส</div>
     <div class="pins">${[0,1,2,3].map(i=>`<i class="${buf.length>i?'f':''}"></i>`).join('')}</div>
     <div class="pad">${[1,2,3,4,5,6,7,8,9].map(n=>`<button data-k="${n}">${n}</button>`).join('')}
       <span></span><button data-k="0">0</button><button data-k="x">←</button></div>`;
@@ -1633,18 +1629,22 @@ document.addEventListener('click',e=>{
   /* Gap 4: inline action buttons from tap-revealed row */
   if(d.paytog){ const s=S.sales.find(x=>x.id===d.paytog); if(s){ const p=payOf(s); setPay([d.paytog],p==='cash'?'transfer':'cash') } return; }
   if(d.void!=null){ voidSale(d.void); return; }
-  if(d.reedit!==undefined){ cust.paid=null; paint(); return; }
-  if(d.custdone!==undefined){ custClear(); return; }
+  if(d.reedit!==undefined){ cust.paid=null; const sh=shift(); if(sh&&route==='sell') paintSell(sh); else paint(); return; }
+  if(d.custdone!==undefined){ custCommit(); return; }
   if(d.custremove){ custRemove(d.custremove); return; }
   if(d.custminus){ custRemoveOne(d.custminus); return; }
   if(d.custplus){ custAddOne(d.custplus); return; }
-  if(d.note!==undefined){ const v=+d.note;
-    const tot=B(cust.ids.map(i=>S.sales.find(s=>s.id===i)).filter(s=>s&&live(s)).reduce((a,s)=>a+s.price,0));
-    setPay(cust.ids,'cash');
-    if(v===0 || v===tot){ /* พอดี — ยังเก็บ list ไว้ให้ตรวจ แล้วกดบันทึกออเดอร์เอง */ }
-    cust.paid=v; paint(); return; }
+  if(d.note!==undefined){
+    cust.paid = +d.note;
+    const sh=shift(); if(sh&&route==='sell') paintSell(sh); else paint();
+    return;
+  }
   /* Gap 3: transfer — stays until บันทึกออเดอร์ */
-  if(d.tf){ setPay(cust.ids,'transfer'); cust.paid='transfer'; paint(); return; }
+  if(d.tf){
+    cust.paid = 'transfer';
+    const sh=shift(); if(sh&&route==='sell') paintSell(sh); else paint();
+    return;
+  }
 
   if(d.doopen!==undefined){ sheet=null; openShop(+d.doopen); return; }
   if(d.float){ sheet=null; openShop(+d.float); return; }
