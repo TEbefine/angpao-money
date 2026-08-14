@@ -378,6 +378,14 @@ function dedupeCatalog(){
 
   if(toDelete.size > 0){
     S.items = S.items.filter(i => !toDelete.has(i.id));
+    if(S.outbox){
+      S.outbox = S.outbox.filter(entry => !(entry.table === 'items' && toDelete.has(entry.row && entry.row.id)));
+    }
+    if(S.sb && S.sb.url && S.sb.key){
+      toDelete.forEach(dupId => {
+        sbFetch('items?id=eq.' + encodeURIComponent(dupId), { method: 'DELETE' }).catch(() => {});
+      });
+    }
   }
 
   // 3. Deduplicate S.goods by name + item_id
@@ -657,10 +665,20 @@ async function pull(){
        factory seed from blank(). If the shop already has a catalog on
        the server, ADOPT it wholesale: merging would show a double menu,
        and pushing would spread this phone's throwaway ids to everyone. */
+    const cleanItMap = new Map();
+    it.forEach(r => {
+      const norm = (r.name || '').trim();
+      const canonicalId = CANONICAL_SEED_IDS[norm];
+      if(!cleanItMap.has(norm) || (canonicalId && r.id === canonicalId)){
+        cleanItMap.set(norm, r);
+      }
+    });
+    const cleanIt = Array.from(cleanItMap.values());
+
     const virgin = !S.pulledAt && !S.sales.length && !S.purchases.length;
-    if(virgin && it.length){
+    if(virgin && cleanIt.length){
       S.cats  = ct.map(r=>({id:r.id,name:r.name,bucket:r.bucket,sort:r.sort}));
-      S.items = it.map(r=>({id:r.id,name:r.name,price:r.price,sort:r.sort,
+      S.items = cleanIt.map(r=>({id:r.id,name:r.name,price:r.price,sort:r.sort,
         photo:'',active:r.active}));
       S.goods = gd.map(r=>({id:r.id,name:r.name,category_id:r.category_id,
         item_id:r.item_id,unit:r.unit,pack_size:r.pack_size,last_price:r.last_price,
@@ -672,13 +690,13 @@ async function pull(){
         const i=local.findIndex(x=>x.id===r.id);
         if(i<0) local.push(map(r,null)); else Object.assign(local[i],map(r,local[i]));
       });
-      mergeCat(S.items,it,(r,cur)=>({id:r.id,name:r.name,price:r.price,sort:r.sort,
+      mergeCat(S.items,cleanIt,(r,cur)=>({id:r.id,name:r.name,price:r.price,sort:r.sort,
         photo:(cur&&cur.photo)||'',active:r.active}));        // รูปเก็บไว้ในเครื่อง
       mergeCat(S.cats ,ct,r=>({id:r.id,name:r.name,bucket:r.bucket,sort:r.sort}));
       mergeCat(S.goods,gd,(r,cur)=>({id:r.id,name:r.name,category_id:r.category_id,
         item_id:r.item_id,unit:r.unit,pack_size:r.pack_size,last_price:r.last_price,
         last_store:r.last_store||'',archived:false,low_stock:cur?cur.low_stock:false}));
-      if(!S.pulledAt && !it.length) pushCatalog();   /* server empty → seed it from here */
+      if(!S.pulledAt && !cleanIt.length) pushCatalog();   /* server empty → seed it from here */
     }
 
     /* ── purchases drive the whole cost engine ────────────────────
