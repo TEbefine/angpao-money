@@ -1573,6 +1573,7 @@ let buf='';
 function showLock(){
   $('#lock').classList.remove('hide');
   $('#lock').innerHTML=`
+    <img src="icon.webp" style="width:48px;height:48px;border-radius:12px;margin-bottom:8px;object-fit:cover" alt="logo">
     <div style="font-family:var(--mono);font-size:13px;color:var(--ink-3)">อั่งเปาการเงิน - สปริงโรส</div>
     <div class="pins">${[0,1,2,3].map(i=>`<i class="${buf.length>i?'f':''}"></i>`).join('')}</div>
     <div class="pad">${[1,2,3,4,5,6,7,8,9].map(n=>`<button data-k="${n}">${n}</button>`).join('')}

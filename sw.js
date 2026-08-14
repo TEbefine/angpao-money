@@ -1,4 +1,4 @@
-const V='rap-v27';
+const V='rap-v28';
 const CORE=['./','./index.html','./manifest.webmanifest','./icon.webp','./apple-touch-icon.png','./icon-192.png','./icon-512.png'];
 self.addEventListener('install',e=>{
   e.waitUntil(caches.open(V).then(c=>c.addAll(CORE)).then(()=>self.skipWaiting()));
