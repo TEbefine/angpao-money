@@ -65,9 +65,9 @@ h2.ttl{font-size:17px;font-weight:600;margin:var(--s4) var(--s3) var(--s2)}
 .tile:active{transform:scale(.97)}
 .tile.off{border-style:dashed;opacity:.38}
 .tile.off:active{transform:none}
-.tile .pic{height:110px;display:grid;place-items:center;background:var(--ready-bg);
-  background-size:cover;background-position:center;background-repeat:no-repeat;position:relative;
-  border-bottom:1px solid var(--line)}
+.tile .pic{height:110px;position:relative;background:var(--ready-bg);
+  border-bottom:1px solid var(--line);overflow:hidden}
+.tile .pic-img{width:100%;height:100%;object-fit:cover;display:block}
 .tile .n{position:absolute;top:8px;right:8px;background:rgba(255,255,255,0.92);border-radius:12px;
   min-width:28px;text-align:center;padding:2px 8px;font-family:var(--mono);
   font-size:14px;font-weight:600;color:var(--ready);box-shadow:0 2px 6px rgba(0,0,0,0.12);
@@ -976,9 +976,7 @@ function viewSell(sh){
     /* low-stock: find goods linked to this item */
     const linkedGoods=S.goods.filter(g=>g.item_id===i.id && !g.archived);
     const isLow=linkedGoods.some(g=>g.low_stock);
-    if(!isOn) return `<button class="tile off" data-reenable="${i.id}">
-      <div class="pic" style="${pic}"></div>
-      <div class="cap"><b>${esc(i.name)}</b></div></button>`;
+    if(!isOn) return '';
     /* per-roll margin hint */
     const unitCost=c_info.sharedPer+(c_info.topPer[i.id]||0);
     const margin=m.price-unitCost;
@@ -994,10 +992,12 @@ function viewSell(sh){
     const wide=span2&&firstActive?' style="grid-column:span 2"':'';
     firstActive=false;
     return `<button class="tile" data-sell="${i.id}"${wide}>
-      <div class="pic" style="${pic}">
+      <div class="pic">
+        ${photoUrl?`<img src="${esc(photoUrl)}" class="pic-img" alt="${esc(i.name)}">`:''}
         ${lowBadge}
-        <span class="n">${cnt[i.id]||0}</span></div>
-      <div class="cap"><b>${esc(i.name)}</b><i>${money(m.price)}฿${marginTag}</i></div>
+        <span class="n">${cnt[i.id]||0}</span>
+      </div>
+      <div class="cap"><b>${esc(i.name)}</b><i>${money(m.price)} ฿${marginTag}</i></div>
     </button>`}).join('');
   /* customer strip */
   let strip='';
