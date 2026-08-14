@@ -112,10 +112,11 @@ h2.ttl{font-size:17px;font-weight:600;margin:var(--s4) var(--s3) var(--s2)}
 .card{background:var(--card);border:1px solid var(--line);border-radius:var(--r);
   margin:0 var(--s3) var(--s3);overflow:hidden}
 .li{display:flex;align-items:center;gap:10px;padding:11px 12px;border-bottom:1px solid var(--line);min-height:48px}
+.row .in.li{padding:11px 12px}
 .li:last-child{border-bottom:0}
 .li .g{flex:1;min-width:0}
 .li .g small{color:var(--ink-3);font-size:12px}
-.li .num{font-family:var(--mono);font-size:14px;min-width:46px;text-align:right}
+.li .num{font-family:var(--mono);font-size:14px;min-width:46px;text-align:right;padding-right:6px}
 .sw{width:38px;height:23px;border-radius:12px;background:var(--line-2);position:relative;flex:none;transition:background .15s}
 .sw::after{content:"";position:absolute;top:2px;left:2px;width:19px;height:19px;border-radius:50%;
   background:#fff;transition:transform .18s var(--ease)}
@@ -158,6 +159,35 @@ nav button.on .nav-img-icon{transform:scale(1.15);filter:drop-shadow(0 2px 4px r
 .hsum b{display:block;font-size:16px;font-weight:600}
 .hsum span{font-size:11px;color:var(--ink-3)}
 .hmore{text-align:center;padding:18px 0 34px;font-size:13px;color:var(--ink-3)}
+
+/* --- purchase history --- */
+.buy-tabs{display:flex;gap:0;margin:0 var(--s3) var(--s3);background:var(--line);border-radius:var(--r);padding:3px;overflow:hidden}
+.buy-tabs button{flex:1;padding:9px 0;border-radius:8px;font-size:14px;font-weight:500;
+  color:var(--ink-3);background:transparent;transition:all .18s var(--ease)}
+.buy-tabs button.on{background:var(--card);color:var(--ink);box-shadow:0 1px 3px rgba(0,0,0,.08)}
+.pur-summary{margin:0 var(--s3) var(--s3);display:grid;grid-template-columns:repeat(3,1fr);
+  gap:1px;background:var(--line);border-radius:var(--r);overflow:hidden}
+.pur-summary div{background:var(--card);padding:12px 8px;text-align:center}
+.pur-summary b{display:block;font-family:var(--mono);font-size:17px;font-weight:600}
+.pur-summary span{font-size:11px;color:var(--ink-3)}
+.pur-day-hd{display:flex;align-items:center;gap:8px;padding:12px;cursor:pointer}
+.pur-day-hd .pur-date{font-weight:600;font-size:15px}
+.pur-day-hd .pur-dow{font-size:12px;color:var(--ink-3)}
+.pur-day-hd .pur-sp{flex:1}
+.pur-day-hd .pur-total{font-family:var(--mono);font-size:16px;font-weight:500;color:var(--ready);margin-right:6px}
+.pur-day-hd .pur-arrow{color:var(--ink-3);font-size:11px;margin-left:4px;transition:transform .18s var(--ease)}
+.pur-day-hd .pur-arrow.open{transform:rotate(90deg)}
+.pur-store-hd{display:flex;align-items:center;gap:8px;padding:8px 12px;
+  background:var(--ready-bg);font-size:13px;font-weight:500;color:var(--ready);
+  border-top:1px solid var(--line)}
+.pur-store-hd .pur-st-total{margin-left:auto;font-family:var(--mono)}
+.pur-line{display:flex;align-items:center;gap:8px;padding:7px 12px 7px 24px;font-size:13px;
+  border-top:1px solid var(--line)}
+.pur-line .pur-name{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.pur-line .pur-qty{font-size:11px;color:var(--ink-3);white-space:nowrap}
+.pur-line .pur-price{font-family:var(--mono);font-size:13px;min-width:54px;text-align:right}
+.pur-line.pur-gap{color:var(--ink-3);font-style:italic}
+.pur-empty{text-align:center;padding:24px var(--s3);font-size:13px;color:var(--ink-3)}
 
 /* --- sheet / lock --- */
 .sheet{position:fixed;inset:0;background:rgba(34,34,34,.32);z-index:60;display:flex;align-items:flex-end}
@@ -237,7 +267,7 @@ const SEED_GOODS = [
 
 const SB_DEFAULT = {url:'https://mqteglbrvtrlaxwlokap.supabase.co',
                     key:'sb_publishable_UXHxwYGn2NO_wP7U_WgCZA_2aEhWtvw'};
-let MODE='live', S=null, U=null, route='sell', sheet=null;
+let MODE='live', S=null, U=null, route='sell', sheet=null, purOpen=null, buyTab='list';
 const KEY = m => 'rap.'+m;
 
 function blank(){
@@ -1060,10 +1090,18 @@ let buyDraft=null;
 function newDraft(){ return {id:uid(),store:S.stores[0],lines:{},off:[],total:'',date:today()}; }
 function viewBuy(){
   if(!buyDraft){ buyDraft = S.buyDraft || newDraft(); S.buyDraft=buyDraft; save(); }
+  const tabs = `<div class="buy-tabs">
+    <button class="${buyTab==='list'?'on':''}" data-buytab="list">📋 รายการ</button>
+    <button class="${buyTab==='history'?'on':''}" data-buytab="history">📖 ประวัติ</button>
+  </div>`;
+  if(buyTab==='history') return `<h2 class="ttl">ซื้อของ</h2>${tabs}${viewPurHistory()}`;
+  return `<h2 class="ttl">ซื้อของ</h2>${tabs}${viewBuyList()}`;
+}
+function viewBuyList(){
   const d=buyDraft;
   const storeOptions = ['ทั้งหมด', ...S.stores];
   const stores = storeOptions.map(s=>`<button class="chip ${d.store===s?'on':''}" data-store="${esc(s)}">${esc(s)}</button>`).join('')
-    +`<button class="chip" data-addstore="1">+</button>`;
+    +`<button class="chip" data-addstore="1" style="min-width:36px;text-align:center;font-size:16px">＋</button>`;
   const cats=S.cats.slice().sort((a,b)=>a.sort-b.sort).map(c=>{
     const gs=S.goods.filter(g=>{
       if(g.category_id!==c.id || g.archived) return false;
@@ -1105,11 +1143,11 @@ function viewBuy(){
   },0);
   const act=d.total===''?null:Math.round(parseFloat(d.total||0)*100);
   const gap=act===null?0:act-sum;
-  return `<h2 class="ttl">ซื้อของ</h2><p class="sub mono">${d.date}</p>
+  return `<p class="sub mono">${d.date}</p>
     <div class="chips">${stores}</div>${cats}
     <div class="card" style="background:var(--ready-bg);border-color:var(--ready-bg)">
       <div class="kv"><span style="color:var(--ready)">รวมที่ติ๊ก</span>
-        <b style="color:var(--ready);font-size:17px">${money(sum)}฿</b></div>
+        <b style="color:var(--ready);font-size:17px">${money(sum)} ฿</b></div>
       <div class="kv"><span style="color:var(--ready)">ยอดบิลจริง</span>
         <input class="mono" id="tot" inputmode="decimal" value="${esc(d.total)}"
           style="width:110px;text-align:right;padding:6px 10px"></div>
@@ -1120,11 +1158,105 @@ function viewBuy(){
     <button class="wide go" data-savebuy="1" style="margin-bottom:24px">บันทึก · ${esc(d.store)}</button>
     <div style="height:8px"></div>`;
 }
+const THAI_DAY=['อา.','จ.','อ.','พ.','พฤ.','ศ.','ส.'];
+const THAI_DAY_FULL=['อาทิตย์','จันทร์','อังคาร','พุธ','พฤหัสบดี','ศุกร์','เสาร์'];
+function viewPurHistory(){
+  const all = S.purchases.slice().sort((a,b)=> a.bought_at<b.bought_at?1:-1);
+  if(!all.length) return `<div class="pur-empty">ยังไม่มีรายการซื้อ</div>`;
+
+  /* summary stats */
+  const totalSpent = all.reduce((a,p)=>{
+    const t = p.total_actual ?? p.lines.reduce((s,l)=> s + (l.unit==='g' ? l.price : Math.round(l.price*l.packs)), 0);
+    return a + t;
+  }, 0);
+  const uniqueDays = new Set(all.map(p=>p.bought_at)).size;
+  const avgPerDay = uniqueDays ? Math.round(totalSpent / uniqueDays) : 0;
+  const summary = `<div class="pur-summary">
+    <div><b>${all.length}</b><span>ครั้งที่ซื้อ</span></div>
+    <div><b>${money(totalSpent)}</b><span>รวมทั้งหมด (฿)</span></div>
+    <div><b>${money(avgPerDay)}</b><span>เฉลี่ย/วัน (฿)</span></div>
+  </div>`;
+
+  /* group by date */
+  const byDate = {};
+  all.forEach(p=>{
+    (byDate[p.bought_at] = byDate[p.bought_at] || []).push(p);
+  });
+  const dates = Object.keys(byDate).sort((a,b)=> a<b?1:-1);
+
+  const dayCards = dates.map(dateKey=>{
+    const purchases = byDate[dateKey];
+    const dt = new Date(dateKey+'T00:00:00');
+    const dow = THAI_DAY_FULL[dt.getDay()];
+    const dayTotal = purchases.reduce((a,p)=>{
+      const t = p.total_actual ?? p.lines.reduce((s,l)=> s + (l.unit==='g' ? l.price : Math.round(l.price*l.packs)), 0);
+      return a + t;
+    }, 0);
+    const isOpen = purOpen === dateKey;
+
+    let body = '';
+    if(isOpen){
+      body = purchases.map(p=>{
+        const pTotal = p.total_actual ?? p.lines.reduce((s,l)=> s + (l.unit==='g' ? l.price : Math.round(l.price*l.packs)), 0);
+        const lines = p.lines.map(l=>{
+          const isGap = !l.goods_id;
+          const qtyStr = l.unit==='g' ? fmtUnit(l.pack_size, 'g')
+            : l.packs > 1 ? `×${l.packs}` : '';
+          const lineTotal = l.unit==='g' ? l.price : Math.round(l.price * l.packs);
+          return `<div class="pur-line${isGap?' pur-gap':''}">
+            <span class="pur-name">${esc(l.goods_name)}</span>
+            <span class="pur-qty">${qtyStr}</span>
+            <span class="pur-price">${money(lineTotal)} ฿</span>
+          </div>`;
+        }).join('');
+
+        return `<div class="row" style="border-top:1px solid var(--line)">
+          <div class="act"><div class="r" data-delpur="${p.id}">ลบ</div></div>
+          <div class="in" style="display:block;padding:0;background:var(--card)">
+            <div class="pur-store-hd">
+              <span>${esc(p.store || 'ไม่ระบุร้าน')}</span>
+              <span class="pur-st-total">${money(pTotal)} ฿</span>
+            </div>
+            ${lines}
+          </div>
+        </div>`;
+      }).join('');
+    }
+
+    return `<div class="card row" style="margin:0 var(--s3) 8px">
+      <div class="act"><div class="r" data-delpur="${dateKey}">ลบ</div></div>
+      <div class="in" style="display:block;padding:0;background:var(--card)">
+        <div class="pur-day-hd" data-purday="${dateKey}">
+          <span class="pur-date">${dateKey}</span>
+          <span class="pur-dow">วัน${dow}</span>
+          <span class="pur-sp"></span>
+          <span class="pur-total">${money(dayTotal)} ฿</span>
+          <span class="pur-arrow${isOpen?' open':''}">${isOpen?'▼':'▶'}</span>
+        </div>
+        ${body}
+      </div>
+    </div>`;
+  }).join('');
+
+  return `${summary}${dayCards}<div style="height:16px"></div>`;
+}
+function delPurchase(target){
+  if(!target) return;
+  const toRemove = S.purchases.filter(p => p.id === target || p.bought_at === target);
+  if(toRemove.length > 0){
+    const ids = new Set(toRemove.map(p => p.id));
+    S.purchases = S.purchases.filter(p => !ids.has(p.id));
+    HIST.key = null;
+    save();
+    buzz(18);
+    paint();
+  }
+}
 function saveBuy(){
   const d=buyDraft;
   const lines=Object.entries(d.lines).map(([gid,l])=>{
     const g=S.goods.find(x=>x.id===gid), c=catOf(g);
-    g.last_price=l.price; g.last_store=d.store;
+    g.last_store=d.store;
     g.low_stock=false;
     const isG = g.unit === 'g';
     const packsCount = isG ? 1 : (l.packs || 1);
@@ -1365,18 +1497,19 @@ function tryPin(p){
 document.addEventListener('click',e=>{
   const openRow = e.target.closest('.row.sl, .row.sr');
   if(openRow){
-    const delBtn = e.target.closest('[data-delgoods],[data-void]');
+    const delBtn = e.target.closest('[data-delgoods],[data-void],[data-delpur]');
     if(delBtn){
       const d = delBtn.dataset;
       if(d.delgoods){ delGoods(d.delgoods); return; }
       if(d.void!=null){ voidSale(d.void); return; }
+      if(d.delpur){ delPurchase(d.delpur); return; }
     }
     document.querySelectorAll('.row').forEach(el=>el.classList.remove('sl','sr'));
     return;
   }
   document.querySelectorAll('.row.sl, .row.sr').forEach(el=>el.classList.remove('sl','sr'));
 
-  const t=e.target.closest('[data-k],[data-go],[data-sell],[data-reenable],[data-note],[data-tf],[data-sheet],[data-sheet2],[data-close-sheet],[data-backdrop],[data-doopen],[data-float],[data-floatx],[data-mtog],[data-mprice],[data-doclose],[data-store],[data-addstore],[data-tick],[data-packs],[data-price],[data-promo],[data-addgoods],[data-delgoods],[data-savebuy],[data-iprice],[data-photo],[data-pin],[data-forget],[data-sbsave],[data-export],[data-lock],[data-paytog],[data-void],[data-day],[data-more],[data-custdone],[data-custremove],[data-custminus],[data-custplus],[data-reedit]');
+  const t=e.target.closest('[data-k],[data-go],[data-sell],[data-reenable],[data-note],[data-tf],[data-sheet],[data-sheet2],[data-close-sheet],[data-backdrop],[data-doopen],[data-float],[data-floatx],[data-mtog],[data-mprice],[data-doclose],[data-store],[data-addstore],[data-tick],[data-packs],[data-price],[data-promo],[data-addgoods],[data-delgoods],[data-savebuy],[data-iprice],[data-photo],[data-pin],[data-forget],[data-sbsave],[data-export],[data-lock],[data-paytog],[data-void],[data-day],[data-more],[data-custdone],[data-custremove],[data-custminus],[data-custplus],[data-reedit],[data-purday],[data-buytab],[data-delpur]');
   if(!t) return; const d=t.dataset;
 
   if(d.k!==undefined){ if(d.k==='x') buf=buf.slice(0,-1); else if(buf.length<4) buf+=d.k;
@@ -1424,7 +1557,21 @@ document.addEventListener('click',e=>{
                            Math.round(parseFloat($('#tt').value||0)*100)); return; }
 
   if(d.store){ buyDraft.store=d.store; dsave(); return; }
-  if(d.addstore){ const v=prompt('ชื่อร้านใหม่'); if(v){ S.stores.push(v); buyDraft.store=v; dsave() } return; }
+  if(d.addstore){
+    const ans = prompt('ชื่อร้านใหม่ (เช่น แม็คโคร, บิ๊กซี, ตลาดสด)');
+    if(ans !== null){
+      const name = ans.trim();
+      if(name){
+        if(!S.stores.includes(name)){
+          S.stores.push(name);
+          queue('stores', {name, sort: S.stores.length - 1});
+        }
+        buyDraft.store = name;
+        dsave();
+      }
+    }
+    return;
+  }
   if(d.tick){ const L=buyDraft.lines;
     if(L[d.tick]){ delete L[d.tick]; dgone(d.tick); }
     else { const g=S.goods.find(x=>x.id===d.tick); const isG=g&&g.unit==='g';
@@ -1445,11 +1592,14 @@ document.addEventListener('click',e=>{
       }
     } return; }
   if(d.price){ const g=S.goods.find(x=>x.id===d.price);
-    const cur=buyDraft.lines[d.price]?buyDraft.lines[d.price].price:(g.last_price??0);
-    const v=prompt(g.name+' — ราคาต่อแพ็ค (บาท)',B(cur));
+    const isTicked = buyDraft && buyDraft.lines[d.price];
+    const cur = isTicked ? buyDraft.lines[d.price].price : (g.last_price??0);
+    const label = isTicked ? (g.name+' — ราคาซื้อจริงรอบนี้ (บาท)') : (g.name+' — ราคาเริ่มต้น / Default (บาท)');
+    const v=prompt(label,B(cur));
     if(v!==null){ const st=Math.round(parseFloat(v)*100)||0;
-      if(!buyDraft.lines[d.price]) buyDraft.lines[d.price]={price:st,packs:1,promo:false};
-      else buyDraft.lines[d.price].price=st; dsave(d.price) } return; }
+      if(isTicked){ buyDraft.lines[d.price].price=st; }
+      else { g.last_price=st; queue('goods',{id:g.id,name:g.name,last_price:g.last_price,last_store:g.last_store||''}); }
+      dsave(d.price); } return; }
   if(d.addgoods){
     const c=S.cats.find(x=>x.id===d.addgoods);
     const catName=(c?c.name:'').toLowerCase();
@@ -1533,6 +1683,9 @@ document.addEventListener('click',e=>{
     dsave(g.id); return;
   }
   if(d.savebuy){ saveBuy(); return; }
+  if(d.buytab){ buyTab = d.buytab; paint(); return; }
+  if(d.purday){ purOpen = purOpen===d.purday ? null : d.purday; paint(); return; }
+  if(d.delpur){ delPurchase(d.delpur); return; }
 
   if(d.iprice){ const i=item(d.iprice), v=prompt(i.name+' — ราคาขาย (บาท)',B(i.price));
     if(v!==null){ i.price=Math.round(parseFloat(v)*100)||0; save(); paint() } return; }
@@ -1590,7 +1743,7 @@ document.addEventListener('touchend',e=>{
   }
   cur=null;},{passive:true});
 document.addEventListener('click',e=>{
-  if(e.target.closest('[data-tick],[data-packs],[data-price],[data-promo],[data-paytog],[data-void],[data-delgoods]')) return;
+  if(e.target.closest('[data-tick],[data-packs],[data-price],[data-promo],[data-paytog],[data-void],[data-delgoods],[data-delpur]')) return;
   const r=e.target.closest('.row');
   if(!r){ document.querySelectorAll('.row').forEach(el=>el.classList.remove('sl','sr')); return; }
   if(r.classList.contains('sl')||r.classList.contains('sr')){
