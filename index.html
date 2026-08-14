@@ -272,7 +272,10 @@ const KEY = m => 'rap.'+m;
 
 function blank(){
   const cats = SEED_CATS.map(([name,bucket],i)=>({id:uid(),name,bucket,sort:i}));
-  const items = SEED_ITEMS.map(([name,price],i)=>({id:uid(),name,price,sort:i,photo:'',active:true}));
+  const items = SEED_ITEMS.map(([name,price],i)=>({
+    id: CANONICAL_SEED_IDS[name] || uid(),
+    name, price, sort:i, photo:'', active:true
+  }));
   const goods = SEED_GOODS.map(([name,cat,unit,pack_size,last_price])=>({
     id:uid(),name,category_id:cats.find(c=>c.name===cat).id,item_id:null,
     unit,pack_size,last_price,last_store:'แม็คโคร',archived:false}));
@@ -293,18 +296,128 @@ function load(){
   if(MODE==='test' && S.seeded && Date.now()-S.seeded > 7*864e5){ S=blank(); save(); }
   if(!S.sb || !S.sb.url){ S.sb={url:SB_DEFAULT.url,key:SB_DEFAULT.key}; save(); }
   ensureSeedItems();
+  dedupeCatalog();
   buyDraft = S.buyDraft || null;
   HIST.days=[]; HIST.done=false; HIST.err=null; HIST.open=null; HIST.detail={}; HIST.key=null;
   document.body.classList.toggle('test',MODE==='test');
   $('#tflag').classList.toggle('hide',MODE!=='test');
 }
+const CANONICAL_SEED_IDS = {
+  'แซลมอน': 'seed-salmon',
+  'กุ้ง': 'seed-shrimp',
+  'ทูน่า': 'seed-tuna',
+  'คาริยากิ': 'seed-teriyaki',
+  'สไปซี่': 'seed-spicy',
+  'หม่าล่า': 'seed-mala',
+  'อะโวคาโด': 'seed-avocado',
+  'ไส้กรอกไก่': 'seed-sausage',
+  'ปูอัด': 'seed-kanikama'
+};
+
+function relinkItemId(oldId, newId){
+  if(!oldId || !newId || oldId === newId) return;
+  if(S.sales){
+    S.sales.forEach(s => {
+      if(s.item_id === oldId) s.item_id = newId;
+    });
+  }
+  if(S.goods){
+    S.goods.forEach(g => {
+      if(g.item_id === oldId) g.item_id = newId;
+    });
+  }
+  if(S.shifts){
+    S.shifts.forEach(sh => {
+      if(sh && sh.menu){
+        if(sh.menu[oldId]){
+          if(!sh.menu[newId]) sh.menu[newId] = sh.menu[oldId];
+          delete sh.menu[oldId];
+        }
+      }
+    });
+  }
+  if(typeof cust !== 'undefined' && cust && cust.items){
+    cust.items = cust.items.map(id => id === oldId ? newId : id);
+  }
+}
+
+function dedupeCatalog(){
+  if(!S || !S.items) return;
+  let changed = false;
+
+  // 1. Re-assign seed item IDs to deterministic canonical IDs if needed
+  S.items.forEach(i => {
+    const clean = i.name.trim();
+    if(CANONICAL_SEED_IDS[clean] && i.id !== CANONICAL_SEED_IDS[clean]){
+      const oldId = i.id;
+      const newId = CANONICAL_SEED_IDS[clean];
+      const targetExists = S.items.some(x => x.id === newId);
+      if(!targetExists){
+        i.id = newId;
+        relinkItemId(oldId, newId);
+        changed = true;
+      }
+    }
+  });
+
+  // 2. Deduplicate S.items by normalized name
+  const nameMap = new Map();
+  const toDelete = new Set();
+  S.items.forEach(i => {
+    const norm = i.name.trim();
+    if(!nameMap.has(norm)){
+      nameMap.set(norm, i);
+    } else {
+      const canonical = nameMap.get(norm);
+      if(!canonical.photo && i.photo) canonical.photo = i.photo;
+      toDelete.add(i.id);
+      relinkItemId(i.id, canonical.id);
+      changed = true;
+    }
+  });
+
+  if(toDelete.size > 0){
+    S.items = S.items.filter(i => !toDelete.has(i.id));
+  }
+
+  // 3. Deduplicate S.goods by name + item_id
+  if(S.goods){
+    const gMap = new Map();
+    const gDelete = new Set();
+    S.goods.forEach(g => {
+      const key = g.name.trim() + '|' + (g.item_id || '');
+      if(!gMap.has(key)){
+        gMap.set(key, g);
+      } else {
+        const canonical = gMap.get(key);
+        gDelete.add(g.id);
+        if(S.purchases){
+          S.purchases.forEach(p => p.lines && p.lines.forEach(l => {
+            if(l.goods_id === g.id) l.goods_id = canonical.id;
+          }));
+        }
+        changed = true;
+      }
+    });
+    if(gDelete.size > 0){
+      S.goods = S.goods.filter(g => !gDelete.has(g.id));
+    }
+  }
+
+  if(changed){
+    save();
+  }
+}
+
 function ensureSeedItems(){
   if(!S || !S.items) return;
+  dedupeCatalog();
   let added = false;
   SEED_ITEMS.forEach(([name, price], idx)=>{
     const clean = name.trim();
+    const seedId = CANONICAL_SEED_IDS[clean] || uid();
     if(!S.items.find(i => i.name.trim() === clean)){
-      const newItem = { id: uid(), name: clean, price, sort: idx, photo: '', active: true };
+      const newItem = { id: seedId, name: clean, price, sort: idx, photo: '', active: true };
       S.items.push(newItem);
       const toppingCat = S.cats ? S.cats.find(c => c.bucket === 'topping') : null;
       if(toppingCat){
@@ -592,6 +705,7 @@ async function pull(){
       device:r.device,ts:+new Date(r.created_at)}));
     mergeById(S.pays,pc,r=>({id:r.id,sale_id:r.sale_id,pay:r.pay}));
     ensureSeedItems();
+    dedupeCatalog();
     S.pulled=Date.now(); S.pulledAt=at; save(); paint();
   }catch(e){ console.warn('pull',e.message) }
 }
