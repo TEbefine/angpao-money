@@ -1288,18 +1288,18 @@ function _buildStripAndFeed(sh,rows,on){
       </div>`;
     }
   }
-  /* feed — tap or swipe left reveals delete; swipe right reveals paytog */
+  /* feed — tap or swipe left reveals delete; swipe right closes */
   const feed=rows.slice(-14).reverse().map(s=>{
     const p=payOf(s);
     return `<div class="row" data-sale="${s.id}">
-      <div class="act"><div class="l" data-paytog="${s.id}">โอน / สด</div><div class="r" data-void="${s.id}">ลบ</div></div>
+      <div class="act"><div class="r" data-void="${s.id}">ลบ</div></div>
       <div class="in"><span class="t">${clock(s.ts)}</span><span class="nm">${esc(s.item_name)}</span>
       ${p==='transfer'?'<span class="pm">โอน</span>':p==='cash'?'<span class="pm">สด</span>':''}</div>
     </div>`}).join('');
   return `${strip?`<div style="margin-bottom:12px">${strip}</div>`:''}
     <button class="wide" data-sheet="menu">แก้เมนูวันนี้
       <span class="mono" style="color:var(--ink-3)">${on.length}/${S.items.length}</span></button>
-    ${rows.length?`<div class="lbl"><span>ล่าสุด</span><span>แตะ/ปัดซ้ายลบ · ปัดขวาสลับสด/โอน</span></div>
+    ${rows.length?`<div class="lbl"><span>ล่าสุด</span><span>แตะ/ปัดซ้ายลบ · ปัดขวาปิด</span></div>
     <div class="feed">${feed}</div>`:`<p class="note" style="margin-top:24px">แตะรูปเพื่อขาย 1 ม้วน</p>`}
     <div style="height:24px"></div>`;
 }
@@ -1723,9 +1723,10 @@ function tryPin(p){
 }
 
 /* ═══════════════ 8 · events ═══════════════ */
+let openRowWasPresent = false;
 document.addEventListener('click',e=>{
-  const openRow = e.target.closest('.row.sl, .row.sr');
-  if(openRow){
+  openRowWasPresent = !!document.querySelector('.row.sl, .row.sr');
+  if(openRowWasPresent){
     const delBtn = e.target.closest('[data-delgoods],[data-void],[data-delpur]');
     if(delBtn){
       const d = delBtn.dataset;
@@ -1736,9 +1737,8 @@ document.addEventListener('click',e=>{
     document.querySelectorAll('.row').forEach(el=>el.classList.remove('sl','sr'));
     return;
   }
-  document.querySelectorAll('.row.sl, .row.sr').forEach(el=>el.classList.remove('sl','sr'));
 
-  const t=e.target.closest('[data-k],[data-go],[data-sell],[data-reenable],[data-note],[data-tf],[data-sheet],[data-sheet2],[data-close-sheet],[data-backdrop],[data-doopen],[data-float],[data-floatx],[data-mtog],[data-mprice],[data-doclose],[data-store],[data-addstore],[data-tick],[data-packs],[data-price],[data-promo],[data-addgoods],[data-delgoods],[data-savebuy],[data-iprice],[data-photo],[data-pin],[data-forget],[data-sbsave],[data-export],[data-lock],[data-paytog],[data-void],[data-day],[data-more],[data-custdone],[data-custremove],[data-custminus],[data-custplus],[data-reedit],[data-purday],[data-buytab],[data-delpur]');
+  const t=e.target.closest('[data-k],[data-go],[data-sell],[data-reenable],[data-note],[data-tf],[data-sheet],[data-sheet2],[data-close-sheet],[data-backdrop],[data-doopen],[data-float],[data-floatx],[data-mtog],[data-mprice],[data-doclose],[data-store],[data-addstore],[data-tick],[data-packs],[data-price],[data-promo],[data-addgoods],[data-delgoods],[data-savebuy],[data-iprice],[data-photo],[data-pin],[data-forget],[data-sbsave],[data-export],[data-lock],[data-void],[data-day],[data-more],[data-custdone],[data-custremove],[data-custminus],[data-custplus],[data-reedit],[data-purday],[data-buytab],[data-delpur]');
   if(!t) return; const d=t.dataset;
 
   if(d.k!==undefined){ if(d.k==='x') buf=buf.slice(0,-1); else if(buf.length<4) buf+=d.k;
@@ -1760,7 +1760,6 @@ document.addEventListener('click',e=>{
   /* Gap 1: re-enable disabled tile on tap */
   if(d.reenable){ const sh=shift(); if(sh){ shiftMenu(sh, d.reenable).on=true; save(); paint(); } return; }
   /* Gap 4: inline action buttons from tap-revealed row */
-  if(d.paytog){ const s=S.sales.find(x=>x.id===d.paytog); if(s){ const p=payOf(s); setPay([d.paytog],p==='cash'?'transfer':'cash') } return; }
   if(d.void!=null){ voidSale(d.void); return; }
   if(d.reedit!==undefined){ cust.paid=null; const sh=shift(); if(sh&&route==='sell') paintSell(sh); else paint(); return; }
   if(d.custdone!==undefined){ custCommit(); return; }
@@ -1969,14 +1968,14 @@ document.addEventListener('touchend',e=>{
     if(dx<-30){
       document.querySelectorAll('.row').forEach(el=>{ if(el!==cur) el.classList.remove('sl','sr'); });
       cur.classList.add('sl'); cur.classList.remove('sr');
-    }else if(dx>30 && cur.querySelector('[data-paytog]')){
-      document.querySelectorAll('.row').forEach(el=>{ if(el!==cur) el.classList.remove('sl','sr'); });
-      cur.classList.add('sr'); cur.classList.remove('sl');
+    }else if(dx>30){
+      document.querySelectorAll('.row').forEach(el=>el.classList.remove('sl','sr'));
     }
   }
   cur=null;},{passive:true});
 document.addEventListener('click',e=>{
-  if(e.target.closest('[data-tick],[data-packs],[data-price],[data-promo],[data-paytog],[data-void],[data-delgoods],[data-delpur]')) return;
+  if(openRowWasPresent){ openRowWasPresent=false; return; }
+  if(e.target.closest('[data-tick],[data-packs],[data-price],[data-promo],[data-void],[data-delgoods],[data-delpur]')) return;
   const r=e.target.closest('.row');
   if(!r){ document.querySelectorAll('.row').forEach(el=>el.classList.remove('sl','sr')); return; }
   if(r.classList.contains('sl')||r.classList.contains('sr')){

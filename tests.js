@@ -236,14 +236,44 @@ function sellByName(dom, name) {
 
     let feedRows = dom.window.document.querySelectorAll('.feed .row');
     assert(feedRows.length === 3, `3 feed rows before void (found ${feedRows.length})`);
+    assert(dom.window.document.querySelector('[data-paytog]') === null, 'no paytog buttons in feed');
 
-    // Void the newest (first in feed)
-    const newestId = feedRows[0].dataset.sale;
-    
-    // Tap to reveal inline actions
+    // Tap to reveal inline delete action
     feedRows[0].click();
     await wait(100);
-    
+    assert(feedRows[0].classList.contains('sl'), 'tap on closed row opens delete button');
+
+    // Click on item text while open -> closes delete button without deleting
+    const inEl = feedRows[0].querySelector('.in');
+    inEl.click();
+    await wait(100);
+    assert(!feedRows[0].classList.contains('sl'), 'clicking item text closes delete button without deleting');
+    assert(dom.window.document.querySelectorAll('.feed .row').length === 3, 'still 3 feed rows after closing delete button');
+
+    // Swipe left -> opens delete button; Swipe right -> closes delete button
+    const touch = (el, type, x, y) => {
+      const t = new dom.window.TouchEvent(type, {
+        bubbles: true, cancelable: true,
+        touches: type === 'touchend' ? [] : [{ clientX: x, clientY: y }],
+        changedTouches: [{ clientX: x, clientY: y }]
+      });
+      el.dispatchEvent(t);
+    };
+
+    touch(feedRows[0], 'touchstart', 100, 100);
+    touch(feedRows[0], 'touchend', 50, 100); // dx = -50 (swipe left)
+    await wait(100);
+    assert(feedRows[0].classList.contains('sl'), 'swipe left opens delete button');
+
+    touch(feedRows[0], 'touchstart', 50, 100);
+    touch(feedRows[0], 'touchend', 100, 100); // dx = +50 (swipe right)
+    await wait(100);
+    assert(!feedRows[0].classList.contains('sl'), 'swipe right closes delete button');
+
+    // Open again and click void button
+    feedRows[0].click();
+    await wait(100);
+    const newestId = feedRows[0].dataset.sale;
     const voidBtn = dom.window.document.querySelector(`[data-void="${newestId}"]`);
     assert(voidBtn !== null, 'void button appears on tap');
     if (voidBtn) {
@@ -307,6 +337,45 @@ function sellByName(dom, name) {
     // Navigate to buy tab
     dom.window.document.querySelector('[data-go="buy"]').click();
     await wait(300);
+
+    // Test swipe & tap interactions on shopping list rows
+    const buyRows = dom.window.document.querySelectorAll('.row[data-gid]');
+    if (buyRows.length > 0) {
+      const firstRow = buyRows[0];
+      const gid = firstRow.dataset.gid;
+      const tickBtn = firstRow.querySelector('[data-tick]');
+
+      const touch = (el, type, x, y) => {
+        const t = new dom.window.TouchEvent(type, {
+          bubbles: true, cancelable: true,
+          touches: type === 'touchend' ? [] : [{ clientX: x, clientY: y }],
+          changedTouches: [{ clientX: x, clientY: y }]
+        });
+        el.dispatchEvent(t);
+      };
+
+      // Swipe left on buy row -> opens delete button
+      touch(firstRow, 'touchstart', 100, 100);
+      touch(firstRow, 'touchend', 50, 100); // dx = -50
+      await wait(100);
+      assert(firstRow.classList.contains('sl'), 'swipe left on buy row opens delete button');
+
+      // Click checkbox while delete button is open -> closes delete button without toggling selection
+      const tickBefore = tickBtn ? tickBtn.textContent : '';
+      if (tickBtn) tickBtn.click();
+      await wait(100);
+      assert(!firstRow.classList.contains('sl'), 'clicking open buy row closes delete button');
+      assert(tickBtn && tickBtn.textContent === tickBefore, 'clicking open buy row does NOT toggle selection');
+
+      // Swipe left then swipe right -> opens then closes delete button
+      touch(firstRow, 'touchstart', 100, 100);
+      touch(firstRow, 'touchend', 50, 100);
+      await wait(100);
+      touch(firstRow, 'touchstart', 50, 100);
+      touch(firstRow, 'touchend', 100, 100);
+      await wait(100);
+      assert(!firstRow.classList.contains('sl'), 'swipe right on buy row closes delete button');
+    }
 
     // Tick first 3 goods
     const tickBtns = Array.from(dom.window.document.querySelectorAll('[data-tick]'));
