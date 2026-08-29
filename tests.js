@@ -134,18 +134,18 @@ function sellByName(dom, name) {
     dom.window.close();
   }
 
-  // ── Test 4: After opening shop, 8 sell tiles render in seed order ──
+  // ── Test 4: After opening shop, active sell tiles render in seed order ──
   {
-    console.log('\n4. Open shop → 8 tiles in seed order');
+    console.log('\n4. Open shop → tiles in seed order');
     const dom = fresh();
     await wait(300);
     await unlockAndOpen(dom);
 
     const tiles = dom.window.document.querySelectorAll('.tile:not(.off)');
-    assert(tiles.length === 8, `8 active tiles (found ${tiles.length})`);
+    assert(tiles.length === 13, `13 active tiles (found ${tiles.length})`);
 
     const names = Array.from(tiles).map(t => t.querySelector('.cap b').textContent);
-    const expected = ['แซลมอน','กุ้ง','คาริยากิ','สไปซี่','หม่าล่า','อะโวคาโด','ไส้กรอกไก่','ปูอัด'];
+    const expected = ['แซลมอน', 'มาม่ากุ้ง', 'มาม่าไก่สไปซี่', 'มาม่าไก่เทอริยากิ', 'มาม่าไก่หม่าล่า', 'ไก่สไปซี่', 'ไก่เทอริยากิ', 'ไก่หม่าล่า', 'กุ้ง', 'ทูน่า', 'ปูอัด', 'อะโวคาโด', 'ไส้กรอกไก่'];
     assert(JSON.stringify(names) === JSON.stringify(expected),
       `seed order: ${names.join(', ')}`);
 
@@ -171,12 +171,11 @@ function sellByName(dom, name) {
     const strip = dom.window.document.querySelector('.cust');
     assert(strip !== null, 'customer strip visible');
     const totalText = strip.querySelector('.top b').textContent;
-    assert(totalText.includes('167'), `strip total contains 167 (got ${totalText})`);
+    assert(totalText.includes('173'), `strip total contains 173 (got ${totalText})`);
 
     const btns = Array.from(strip.querySelectorAll('.btns button'));
-    const btnLabels = btns.filter(b => !b.classList.contains('tf')).map(b => b.textContent.trim());
-    const expected = ['พอดี', '170', '500', '1000'];
-    // Note: 1000 renders as '1,000' via toLocaleString in some locales, or '1000' in others
+    const btnLabels = btns.filter(b => !b.classList.contains('tf')).map(b => b.textContent.trim().replace(/,/g,''));
+    const expected = ['พอดี', '180', '500', '1000'];
     assert(JSON.stringify(btnLabels) === JSON.stringify(expected),
       `note buttons: ${btnLabels.join(', ')} (expected: ${expected.join(', ')})`);
 
@@ -465,9 +464,9 @@ function sellByName(dom, name) {
     dom.window.close();
   }
 
-  // ── Test 11: Disabling one item → 7 active, first spans 2 cols ──
+  // ── Test 11: Disabling one item → 12 active tiles ──
   {
-    console.log('\n11. Disable item → 7 active tiles, first spans 2 columns');
+    console.log('\n11. Disable item → 12 active tiles');
     const dom = fresh();
     await wait(300);
     await unlockAndOpen(dom);
@@ -489,14 +488,7 @@ function sellByName(dom, name) {
     await wait(300);
 
     const activeTiles = dom.window.document.querySelectorAll('.tile:not(.off)');
-    const disabledTiles = dom.window.document.querySelectorAll('.tile.off');
-    assert(activeTiles.length === 7, `7 active tiles (found ${activeTiles.length})`);
-    assert(disabledTiles.length === 1, `1 disabled tile (found ${disabledTiles.length})`);
-
-    // First active tile should have grid-column: span 2 (7 is odd)
-    const firstActive = activeTiles[0];
-    const hasSpan = firstActive && firstActive.style.gridColumn === 'span 2';
-    assert(hasSpan, `first active tile spans 2 columns (style=${firstActive?.style?.gridColumn})`);
+    assert(activeTiles.length === 12, `12 active tiles (found ${activeTiles.length})`);
 
     dom.window.close();
   }

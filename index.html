@@ -56,7 +56,35 @@ h2.ttl{font-size:17px;font-weight:600;margin:var(--s4) var(--s3) var(--s2)}
 .sub{font-size:13px;color:var(--ink-3);margin:0 var(--s3) var(--s3)}
 .lbl{font-size:12px;color:var(--ink-3);margin:var(--s4) var(--s3) var(--s2);display:flex;justify-content:space-between}
 
-/* --- sell grid --- */
+/* --- sell horizontal category rows --- */
+.sell-container{padding-bottom:var(--s2)}
+.cat-filter{display:flex;gap:6px;overflow-x:auto;padding:8px var(--s3) 4px;margin-bottom:6px;scrollbar-width:none;-webkit-overflow-scrolling:touch}
+.cat-filter::-webkit-scrollbar{display:none}
+.cat-chip{font-size:12px;font-weight:500;padding:6px 12px;border-radius:20px;background:var(--card);border:1px solid var(--line-2);color:var(--ink-2);white-space:nowrap;flex:none;transition:all .15s var(--ease)}
+.cat-chip.on{background:var(--ready);color:#fff;border-color:var(--ready);box-shadow:0 2px 6px rgba(107,144,128,0.25)}
+
+.cat-section{margin-bottom:14px}
+.cat-hdr{display:flex;align-items:center;justify-content:space-between;padding:0 var(--s3) 6px}
+.cat-title{display:flex;align-items:center;gap:6px;font-size:14px;font-weight:600;color:var(--ink)}
+.cat-icon{font-size:15px}
+.cat-count{font-size:11px;color:var(--ink-3);display:flex;align-items:center;gap:4px}
+.cat-hint{font-size:10px;background:var(--line);padding:1px 6px;border-radius:8px;color:var(--ink-3)}
+
+.cat-row{display:flex;gap:10px;overflow-x:auto;padding:2px var(--s3) 8px;scroll-snap-type:x proximity;-webkit-overflow-scrolling:touch;scrollbar-width:none}
+.cat-row::-webkit-scrollbar{display:none}
+.cat-row .tile{flex:0 0 138px;width:138px;min-width:138px;scroll-snap-align:start;border-radius:12px;background:var(--card);border:1px solid var(--line);box-shadow:0 1px 3px rgba(0,0,0,0.04);overflow:hidden;text-align:left;position:relative;transition:transform .12s var(--ease),box-shadow .12s var(--ease)}
+.cat-row .tile:active{transform:scale(.95)}
+.cat-row .tile.off{border-style:dashed;opacity:.38}
+.cat-row .tile.off:active{transform:none}
+.cat-row .tile .pic{height:94px;position:relative;background:var(--ready-bg);border-bottom:1px solid var(--line);overflow:hidden}
+.cat-row .tile .pic-img{width:100%;height:100%;object-fit:cover;display:block}
+.cat-row .tile .n{position:absolute;top:6px;right:6px;background:rgba(255,255,255,0.94);border-radius:10px;min-width:24px;text-align:center;padding:1px 6px;font-family:var(--mono);font-size:13px;font-weight:600;color:var(--ready);box-shadow:0 2px 5px rgba(0,0,0,0.12);backdrop-filter:blur(4px)}
+.cat-row .tile .n.has-cust{background:var(--ready);color:#ffffff;box-shadow:0 2px 8px rgba(107,144,128,0.4)}
+.cat-row .tile .cap{padding:6px 8px;display:flex;flex-direction:column;gap:2px}
+.cat-row .tile .cap b{font-weight:600;font-size:13px;color:var(--ink);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.cat-row .tile .cap i{font-style:normal;font-family:var(--mono);font-size:12px;font-weight:500;color:var(--ready)}
+
+/* legacy grid compatibility */
 .grid{display:grid;grid-template-columns:1fr 1fr;gap:var(--s2);padding:var(--s3)}
 .grid>:first-child:nth-last-child(odd){grid-column:span 2}
 .tile{background:var(--card);border:1px solid var(--line);border-radius:12px;
@@ -239,21 +267,58 @@ const dur = ms => { const m=Math.floor(ms/60000); return Math.floor(m/60)+'ช�
 /* ═══════════════ 1 · state ═══════════════ */
 const DEVICE = localStorage.dev || (localStorage.dev = uid().slice(0,8));
 const SEED_ITEMS = [
-  ['แซลมอน',5900],['กุ้ง',4900],['ทูน่า',4500],['คาริยากิ',4500],['สไปซี่',4500],
-  ['หม่าล่า',4500],['อะโวคาโด',4500],['ไส้กรอกไก่',3900],['ปูอัด',3900]
+  ['แซลมอน', 5900, 'ปลาแซลมอน'],
+  ['มาม่ากุ้ง', 6500, 'มาม่าเกาหลี'],
+  ['มาม่าไก่สไปซี่', 5900, 'มาม่าเกาหลี'],
+  ['มาม่าไก่เทอริยากิ', 5900, 'มาม่าเกาหลี'],
+  ['มาม่าไก่หม่าล่า', 5900, 'มาม่าเกาหลี'],
+  ['ไก่สไปซี่', 4900, 'หน้าไก่'],
+  ['ไก่เทอริยากิ', 4900, 'หน้าไก่'],
+  ['ไก่หม่าล่า', 4900, 'หน้าไก่'],
+  ['กุ้ง', 5500, 'หน้าทะเล'],
+  ['ทูน่า', 4900, 'หน้าทะเล'],
+  ['ปูอัด', 4900, 'หน้าทะเล'],
+  ['อะโวคาโด', 4500, 'อื่นๆ'],
+  ['ไส้กรอกไก่', 3900, 'อื่นๆ']
 ];
 const DEFAULT_PHOTOS = {
   'แซลมอน': 'หน้าแซลมอน.webp',
+  'ปลาแซลมอน': 'หน้าแซลมอน.webp',
   'กุ้ง': 'หน้ากุ้ง.webp',
   'ทูน่า': 'หน้าทูน่า.webp',
-  'คาริยากิ': 'หน้าไก่เทอริยากิ.webp',
+  'ปูอัด': 'หน้าปูอัด.webp',
+  'ไก่สไปซี่': 'หน้าไก่สไปซี่.webp',
   'สไปซี่': 'หน้าไก่สไปซี่.webp',
+  'ไก่เทอริยากิ': 'หน้าไก่เทอริยากิ.webp',
+  'คาริยากิ': 'หน้าไก่เทอริยากิ.webp',
+  'ไก่หม่าล่า': 'หน้าไก่หม่าล่า.webp',
   'หม่าล่า': 'หน้าไก่หม่าล่า.webp',
+  'มาม่ากุ้ง': 'หน้ากุ้ง.webp',
+  'มาม่าไก่สไปซี่': 'หน้าไก่สไปซี่.webp',
+  'มาม่าไก่เทอริยากิ': 'หน้าไก่เทอริยากิ.webp',
+  'มาม่าไก่หม่าล่า': 'หน้าไก่หม่าล่า.webp',
   'อะโวคาโด': 'หน้าอะโวคาโด้.webp',
-  'ไส้กรอกไก่': 'หน้าใส้กรอกไก่.webp',
-  'ปูอัด': 'หน้าปูอัด.webp'
+  'ไส้กรอกไก่': 'หน้าใส้กรอกไก่.webp'
 };
 const getPhoto = i => i ? (i.photo || DEFAULT_PHOTOS[i.name] || '') : '';
+const CATEGORY_ORDER = ['ปลาแซลมอน', 'มาม่าเกาหลี', 'หน้าไก่', 'หน้าทะเล', 'อื่นๆ'];
+const CATEGORY_ICONS = {
+  'ปลาแซลมอน': '🍣',
+  'มาม่าเกาหลี': '🍜',
+  'หน้าไก่': '🍗',
+  'หน้าทะเล': '🦐',
+  'อื่นๆ': '🥗'
+};
+function itemCategory(i){
+  if(i && i.category) return i.category;
+  const n = (i ? i.name : '') || '';
+  const clean = n.trim();
+  if(clean.startsWith('มาม่า')) return 'มาม่าเกาหลี';
+  if(clean.includes('แซลมอน') || clean.includes('แซลม้อน')) return 'ปลาแซลมอน';
+  if(clean.includes('ไก่') || clean.includes('สไปซี่') || clean.includes('คาริยากิ') || clean.includes('เทอริยากิ') || clean.includes('หม่าล่า')) return 'หน้าไก่';
+  if(clean.includes('กุ้ง') || clean.includes('ทูน่า') || clean.includes('ปูอัด')) return 'หน้าทะเล';
+  return 'อื่นๆ';
+}
 const SEED_CATS = [
   ['ผัก','shared'],['แป้ง · น้ำจิ้ม','shared'],['หน้าโรล','topping'],
   ['ของใช้','shared'],['อุปกรณ์','equipment']
@@ -267,14 +332,14 @@ const SEED_GOODS = [
 
 const SB_DEFAULT = {url:'https://mqteglbrvtrlaxwlokap.supabase.co',
                     key:'sb_publishable_UXHxwYGn2NO_wP7U_WgCZA_2aEhWtvw'};
-let MODE='live', S=null, U=null, route='sell', sheet=null, purOpen=null, buyTab='list';
+let MODE='live', S=null, U=null, route='sell', sheet=null, purOpen=null, buyTab='list', sellCatFilter='all';
 const KEY = m => 'rap.'+m;
 
 function blank(){
   const cats = SEED_CATS.map(([name,bucket],i)=>({id:uid(),name,bucket,sort:i}));
-  const items = SEED_ITEMS.map(([name,price],i)=>({
+  const items = SEED_ITEMS.map(([name,price,category],i)=>({
     id: CANONICAL_SEED_IDS[name] || uid(),
-    name, price, sort:i, photo:'', active:true
+    name, price, category, sort:i, photo:'', active:true
   }));
   const goods = SEED_GOODS.map(([name,cat,unit,pack_size,last_price])=>({
     id:uid(),name,category_id:cats.find(c=>c.name===cat).id,item_id:null,
@@ -304,14 +369,22 @@ function load(){
 }
 const CANONICAL_SEED_IDS = {
   'แซลมอน': 'seed-salmon',
+  'ปลาแซลมอน': 'seed-salmon',
+  'มาม่ากุ้ง': 'seed-mama-shrimp',
+  'มาม่าไก่สไปซี่': 'seed-mama-spicy',
+  'มาม่าไก่เทอริยากิ': 'seed-mama-teriyaki',
+  'มาม่าไก่หม่าล่า': 'seed-mama-mala',
+  'ไก่สไปซี่': 'seed-spicy',
+  'สไปซี่': 'seed-spicy',
+  'ไก่เทอริยากิ': 'seed-teriyaki',
+  'คาริยากิ': 'seed-teriyaki',
+  'ไก่หม่าล่า': 'seed-mala',
+  'หม่าล่า': 'seed-mala',
   'กุ้ง': 'seed-shrimp',
   'ทูน่า': 'seed-tuna',
-  'คาริยากิ': 'seed-teriyaki',
-  'สไปซี่': 'seed-spicy',
-  'หม่าล่า': 'seed-mala',
+  'ปูอัด': 'seed-kanikama',
   'อะโวคาโด': 'seed-avocado',
-  'ไส้กรอกไก่': 'seed-sausage',
-  'ปูอัด': 'seed-kanikama'
+  'ไส้กรอกไก่': 'seed-sausage'
 };
 
 function relinkItemId(oldId, newId){
@@ -421,11 +494,12 @@ function ensureSeedItems(){
   if(!S || !S.items) return;
   dedupeCatalog();
   let added = false;
-  SEED_ITEMS.forEach(([name, price], idx)=>{
+  SEED_ITEMS.forEach(([name, price, category], idx)=>{
     const clean = name.trim();
     const seedId = CANONICAL_SEED_IDS[clean] || uid();
-    if(!S.items.find(i => i.name.trim() === clean)){
-      const newItem = { id: seedId, name: clean, price, sort: idx, photo: '', active: true };
+    let it = S.items.find(i => i.name.trim() === clean || (CANONICAL_SEED_IDS[clean] && i.id === CANONICAL_SEED_IDS[clean]));
+    if(!it){
+      const newItem = { id: seedId, name: clean, price, category, sort: idx, photo: '', active: true };
       S.items.push(newItem);
       const toppingCat = S.cats ? S.cats.find(c => c.bucket === 'topping') : null;
       if(toppingCat){
@@ -442,6 +516,15 @@ function ensureSeedItems(){
         sh.menu[newItem.id] = { on: true, price };
       }
       added = true;
+    } else {
+      if(!it.category && category){
+        it.category = category;
+        added = true;
+      }
+      if(it.name.trim() !== clean && CANONICAL_SEED_IDS[clean] && it.id === CANONICAL_SEED_IDS[clean]){
+        it.name = clean;
+        added = true;
+      }
     }
   });
 
@@ -1096,17 +1179,23 @@ function paintSell(sh, soldItemId){
   const sf=$('#sf');
   if(route!=='sell' || !sh || !sf){ paint(); return; }
   reindex();
-  const rows=netSales(sh.id), cnt={};
+  const rows=netSales(sh.id), cnt={}, inCust={};
   rows.forEach(s=>cnt[s.item_id]=(cnt[s.item_id]||0)+1);
-  cust.items.forEach(id=>cnt[id]=(cnt[id]||0)+1);
-  /* patch badge counts in-place — only textContent, no DOM structure change */
+  cust.items.forEach(id=>{
+    cnt[id]=(cnt[id]||0)+1;
+    inCust[id]=(inCust[id]||0)+1;
+  });
+  /* patch badge counts in-place — only textContent and highlight class */
   const tiles=$('#view').querySelectorAll('.tile[data-sell]');
   tiles.forEach(tile=>{
     const iid=tile.dataset.sell;
     const badge=tile.querySelector('.n');
-    if(badge) badge.textContent=cnt[iid]||0;
+    if(badge){
+      badge.textContent=cnt[iid]||0;
+      badge.classList.toggle('has-cust', !!inCust[iid]);
+    }
   });
-  /* update ONLY the stable #sf container — grid is never touched */
+  /* update ONLY the stable #sf container — menu rows are never touched */
   const on=S.items.filter(i=>shiftMenu(sh,i).on);
   sf.innerHTML=_buildStripAndFeed(sh,rows,on);
 }
@@ -1133,46 +1222,88 @@ function viewClosed(){
   </div>`;
 }
 function viewSell(sh){
-  const rows=netSales(sh.id), cnt={};
+  const rows=netSales(sh.id), cnt={}, inCust={};
   rows.forEach(s=>cnt[s.item_id]=(cnt[s.item_id]||0)+1);
-  cust.items.forEach(id=>cnt[id]=(cnt[id]||0)+1);
-  /* Gap 1: render ALL items — disabled ones get dashed placeholder */
+  cust.items.forEach(id=>{
+    cnt[id]=(cnt[id]||0)+1;
+    inCust[id]=(inCust[id]||0)+1;
+  });
   const on=S.items.filter(i=>shiftMenu(sh, i).on);
-  let firstActive=true;
-  const span2=on.length%2===1;
   const c_info=costs();
-  const tiles=S.items.map(i=>{
-    const m=shiftMenu(sh, i);
-    const isOn=m.on;
-    const photoUrl=getPhoto(i);
-    const pic=photoUrl?`background-image:url('${esc(photoUrl)}')`:'';
-    /* low-stock: find goods linked to this item */
-    const linkedGoods=S.goods.filter(g=>g.item_id===i.id && !g.archived);
-    const isLow=linkedGoods.some(g=>g.low_stock);
-    if(!isOn) return '';
-    /* per-roll margin hint */
-    const unitCost=c_info.sharedPer+(c_info.topPer[i.id]||0);
-    const margin=m.price-unitCost;
-    const marginTag=c_info.rolls>=30
-      ? `<span style="font-size:10px;padding:1px 5px;border-radius:4px;margin-left:4px;
-           background:${margin>=0?'var(--ready-bg)':'var(--pause-bg)'};
-           color:${margin>=0?'var(--ready)':'var(--pause)'}">
-           ${margin>=0?'+':''}${money(margin)}
-         </span>` : '';
-    const lowBadge=isLow
-      ? `<span style="position:absolute;top:6px;left:6px;font-size:9px;font-weight:600;
-           padding:2px 5px;border-radius:4px;background:var(--pause);color:#fff">ใกล้หมด</span>` : '';
-    const wide=span2&&firstActive?' style="grid-column:span 2"':'';
-    firstActive=false;
-    return `<button class="tile" data-sell="${i.id}"${wide}>
-      <div class="pic">
-        ${photoUrl?`<img src="${esc(photoUrl)}" class="pic-img" alt="${esc(i.name)}">`:''}
-        ${lowBadge}
-        <span class="n">${cnt[i.id]||0}</span>
+
+  // Group active items by category
+  const catGroups={};
+  on.forEach(i=>{
+    const cat=itemCategory(i);
+    if(!catGroups[cat]) catGroups[cat]=[];
+    catGroups[cat].push(i);
+  });
+
+  const availableCats = CATEGORY_ORDER.filter(c => catGroups[c] && catGroups[c].length > 0);
+  Object.keys(catGroups).forEach(c => {
+    if(!availableCats.includes(c)) availableCats.push(c);
+  });
+
+  const filterTabs = availableCats.length > 1 ? `
+    <div class="cat-filter">
+      <button class="cat-chip ${sellCatFilter==='all'?'on':''}" data-catfilter="all">ทั้งหมด (${on.length})</button>
+      ${availableCats.map(c=>`
+        <button class="cat-chip ${sellCatFilter===c?'on':''}" data-catfilter="${esc(c)}">
+          ${CATEGORY_ICONS[c]||'🥢'} ${esc(c)} (${catGroups[c].length})
+        </button>
+      `).join('')}
+    </div>` : '';
+
+  const displayCats = sellCatFilter==='all' ? availableCats : [sellCatFilter].filter(c => catGroups[c]);
+
+  const sections = displayCats.map(catName => {
+    const itemsInCat = catGroups[catName] || [];
+    if(!itemsInCat.length) return '';
+
+    const tiles = itemsInCat.map(i => {
+      const m = shiftMenu(sh, i);
+      const photoUrl = getPhoto(i);
+      const linkedGoods = S.goods.filter(g => g.item_id === i.id && !g.archived);
+      const isLow = linkedGoods.some(g => g.low_stock);
+      const unitCost = c_info.sharedPer + (c_info.topPer[i.id] || 0);
+      const margin = m.price - unitCost;
+      const marginTag = c_info.rolls >= 30
+        ? `<span style="font-size:10px;padding:1px 4px;border-radius:4px;background:${margin>=0?'var(--ready-bg)':'var(--pause-bg)'};color:${margin>=0?'var(--ready)':'var(--pause)'}">
+             ${margin>=0?'+':''}${money(margin)}
+           </span>` : '';
+      const lowBadge = isLow
+        ? `<span style="position:absolute;top:5px;left:5px;font-size:9px;font-weight:600;padding:2px 5px;border-radius:4px;background:var(--pause);color:#fff">ใกล้หมด</span>` : '';
+      const hasCust = !!inCust[i.id];
+
+      return `<button class="tile" data-sell="${i.id}">
+        <div class="pic">
+          ${photoUrl ? `<img src="${esc(photoUrl)}" class="pic-img" alt="${esc(i.name)}">` : ''}
+          ${lowBadge}
+          <span class="n ${hasCust ? 'has-cust' : ''}">${cnt[i.id] || 0}</span>
+        </div>
+        <div class="cap">
+          <b>${esc(i.name)}</b>
+          <div style="display:flex;align-items:center;justify-content:space-between">
+            <i>${money(m.price)} ฿</i>
+            ${marginTag}
+          </div>
+        </div>
+      </button>`;
+    }).join('');
+
+    return `<div class="cat-section" data-cat="${esc(catName)}">
+      <div class="cat-hdr">
+        <span class="cat-title">
+          <span class="cat-icon">${CATEGORY_ICONS[catName] || '🥢'}</span>
+          <b>${esc(catName)}</b>
+        </span>
+        <span class="cat-count">${itemsInCat.length} เมนู <span class="cat-hint">← เลื่อน →</span></span>
       </div>
-      <div class="cap"><b>${esc(i.name)}</b><i>${money(m.price)} ฿${marginTag}</i></div>
-    </button>`}).join('');
-  return `<div class="grid">${tiles}</div><div id="sf">${_buildStripAndFeed(sh,rows,on)}</div>`;
+      <div class="cat-row">${tiles}</div>
+    </div>`;
+  }).join('');
+
+  return `<div class="sell-container">${filterTabs}${sections}</div><div id="sf">${_buildStripAndFeed(sh,rows,on)}</div>`;
 }
 /* ── shared strip + feed builder (used by viewSell and paintSell) ── */
 function _buildStripAndFeed(sh,rows,on){
@@ -1593,10 +1724,14 @@ function totalProfit(){
 function viewSet(){
   const items=S.items.map(i=>{
     const pUrl=getPhoto(i);
-    const imgHtml=pUrl?`<img src="${esc(pUrl)}" style="width:32px;height:32px;border-radius:6px;object-fit:cover;flex:none">`:'';
+    const cat=itemCategory(i);
+    const imgHtml=pUrl?`<img src="${esc(pUrl)}" style="width:34px;height:34px;border-radius:6px;object-fit:cover;flex:none">`:'';
     return `<div class="li">
       ${imgHtml}
-      <span class="g">${esc(i.name)}</span>
+      <div class="g">
+        <div><b>${esc(i.name)}</b></div>
+        <small style="color:var(--ink-3)">${esc(cat)}</small>
+      </div>
       <button class="chip" data-photo="${i.id}">${i.photo?'เปลี่ยนรูป':(pUrl?'รูปหลัก':'ใส่รูป')}</button>
       <button class="num" data-iprice="${i.id}">${money(i.price)}฿</button></div>`;
   }).join('');
@@ -1604,7 +1739,13 @@ function viewSet(){
     <span class="g">${esc(p.name)}${p.test?' <small>· ทดสอบ</small>':''}</span>
     <button class="chip mono" data-pin="${ix}">${p.pin}</button></div>`).join('');
   return `<h2 class="ttl">ตั้งค่า</h2>
-    <div class="lbl"><span>เมนู · ราคาตั้งต้น</span></div><div class="card">${items}</div>
+    <div class="lbl">
+      <span>เมนู · ราคาตั้งต้น</span>
+      <button data-sheet="additem" style="color:var(--ready);font-size:13px;font-weight:600;display:flex;align-items:center;gap:4px">
+        <span>+</span> เพิ่มเมนูใหม่
+      </button>
+    </div>
+    <div class="card">${items}</div>
     <div class="lbl"><span>PIN</span></div><div class="card">${staff}
       <div class="li"><span class="g" style="color:var(--ink-3);font-size:13px">
         เครื่องนี้จำ ${esc(U?U.name:'-')} ไว้แล้ว</span>
@@ -1640,7 +1781,89 @@ function calcCloseTf(exp){
   const autoTf = Math.max(0, exp - ccVal);
   ttEl.value = autoTf;
 }
+
+let _newMenuPhotoTemp = '';
+
+function addNewMenuItem(){
+  const nameInput = $('#new_item_name');
+  const priceInput = $('#new_item_price');
+  const customCatInput = $('#new_item_cat');
+  const activeOpt = document.querySelector('.cat-opt.on');
+
+  const name = (nameInput ? nameInput.value : '').trim();
+  const priceVal = parseFloat((priceInput ? priceInput.value : '') || '0');
+  const catChoice = activeOpt ? activeOpt.dataset.catopt : '';
+  const customCat = (customCatInput ? customCatInput.value : '').trim();
+  const category = customCat || catChoice || 'อื่นๆ';
+
+  if(!name){ alert('กรุณาใส่ชื่อเมนู'); return; }
+  if(!priceVal || priceVal <= 0){ alert('กรุณาใส่ราคาขาย'); return; }
+
+  const price = Math.round(priceVal * 100);
+  const id = uid();
+  const photo = _newMenuPhotoTemp || '';
+  _newMenuPhotoTemp = '';
+
+  const newItem = { id, name, price, category, sort: S.items.length, photo, active: true };
+  S.items.push(newItem);
+
+  // create linked topping goods for cost engine
+  const toppingCat = S.cats ? S.cats.find(c => c.bucket === 'topping') : null;
+  if(toppingCat){
+    const g = { id: uid(), name, category_id: toppingCat.id, item_id: id,
+      unit: 'g', pack_size: 500, last_price: null, last_store: '', archived: false, low_stock: false };
+    S.goods.push(g);
+    queue('goods', { id: g.id, name: g.name, category_id: g.category_id, item_id: g.item_id,
+      unit: g.unit, pack_size: g.pack_size, last_price: g.last_price, last_store: g.last_store || '' });
+  }
+  queue('items', { id: newItem.id, name: newItem.name, price: newItem.price, sort: newItem.sort, active: newItem.active });
+
+  const sh = shift();
+  if(sh){
+    sh.menu = sh.menu || {};
+    sh.menu[newItem.id] = { on: true, price };
+  }
+  save();
+  buzz(18);
+  sheet = null;
+  paint();
+}
+
 const SH={
+  additem(){
+    return wrap(`<h2 class="ttl">เพิ่มเมนูใหม่</h2>
+      <p class="sub">สร้างเมนูใหม่และตั้งราคาขายได้ทันที</p>
+      <div class="card" style="padding:14px;display:flex;flex-direction:column;gap:12px">
+        <div>
+          <label style="font-size:12px;font-weight:600;color:var(--ink-2);display:block;margin-bottom:5px">ชื่อเมนู</label>
+          <input id="new_item_name" placeholder="เช่น มาม่าหมูสับ, โรลแซลมอนสด" style="font-size:15px">
+        </div>
+        <div>
+          <label style="font-size:12px;font-weight:600;color:var(--ink-2);display:block;margin-bottom:5px">ราคาขาย (บาท)</label>
+          <input id="new_item_price" class="mono" type="number" inputmode="numeric" placeholder="เช่น 59" style="font-size:16px;text-align:right">
+        </div>
+        <div>
+          <label style="font-size:12px;font-weight:600;color:var(--ink-2);display:block;margin-bottom:6px">หมวดหมู่</label>
+          <div class="chips" style="padding:0;margin-bottom:8px">
+            ${['ปลาแซลมอน','มาม่าเกาหลี','หน้าไก่','หน้าทะเล','อื่นๆ'].map((c,idx)=>
+              `<button type="button" class="chip cat-opt ${idx===0?'on':''}" data-catopt="${esc(c)}">${CATEGORY_ICONS[c]||''} ${c}</button>`
+            ).join('')}
+          </div>
+          <input id="new_item_cat" placeholder="หรือพิมพ์ชื่อหมวดหมู่อื่นๆ..." style="font-size:13px">
+        </div>
+        <div>
+          <label style="font-size:12px;font-weight:600;color:var(--ink-2);display:block;margin-bottom:5px">รูปภาพเมนู (ไม่บังคับ)</label>
+          <div style="display:flex;align-items:center;gap:12px">
+            <div id="new_photo_prev" style="width:52px;height:52px;border-radius:10px;background:var(--ready-bg);border:1px dashed var(--line-2);display:grid;place-items:center;overflow:hidden;flex:none">
+              <span style="font-size:20px">📷</span>
+            </div>
+            <button type="button" class="chip" data-choosephoto="1" style="flex:1;min-height:42px;font-weight:500">เลือกรูปจากเครื่อง</button>
+          </div>
+        </div>
+      </div>
+      <button class="wide go" data-doadditem="1" style="margin:16px">บันทึกเมนูใหม่</button>
+      <button class="wide" data-close-sheet="1" style="margin:0 16px 16px">ยกเลิก</button>`);
+  },
   open(){ const last=S.shifts.filter(s=>s.closed_at).pop();
     const dflt=last?last.float_start:100000;
     return wrap(`<h2 class="ttl">เปิดร้าน</h2>
@@ -1650,15 +1873,23 @@ const SH={
         <button class="chip" data-floatx="1">อื่น</button></div>
       <button class="wide go" data-doopen="${dflt}" style="margin:24px 16px">เปิดร้าน</button>`)},
   menu(){ const sh=shift();
-    return wrap(`<h2 class="ttl">เมนูวันนี้</h2><p class="sub">ปิดตัวที่วันนี้ไม่ได้ทำ · ปุ่มที่เหลืออยู่ที่เดิมเสมอ</p>
+    return wrap(`<h2 class="ttl">เมนูวันนี้</h2>
+      <p class="sub">ปิดตัวที่วันนี้ไม่ได้ทำ · ปุ่มที่เหลืออยู่ที่เดิมเสมอ</p>
+      <button class="wide" data-sheet2="additem" style="margin:0 var(--s3) 14px;border-color:var(--ready);color:var(--ready);font-weight:600">
+        + เพิ่มเมนูใหม่
+      </button>
       <div class="card">${S.items.map(i=>{
         const m=shiftMenu(sh, i);
         const isOn=m.on;
+        const cat=itemCategory(i);
         return `<div class="li" style="opacity:${isOn?1:0.55};background:${isOn?'var(--card)':'var(--paper)'};transition:all .18s var(--ease)">
-          <span class="g">
-            <b style="font-weight:500">${esc(i.name)}</b>
-            <small style="margin-left:6px;font-size:11px;color:${isOn?'var(--ready)':'var(--pause)'}">${isOn?'เปิดขาย':'ปิดขาย'}</small>
-          </span>
+          <div class="g">
+            <div>
+              <b style="font-weight:500">${esc(i.name)}</b>
+              <small style="margin-left:6px;font-size:11px;color:${isOn?'var(--ready)':'var(--pause)'}">${isOn?'เปิดขาย':'ปิดขาย'}</small>
+            </div>
+            <small style="color:var(--ink-3);font-size:11px">${esc(cat)}</small>
+          </div>
           <button class="chip mono" data-mprice="${i.id}" style="padding:4px 10px;min-height:0;margin-right:8px;font-size:13px">${money(m.price)} ฿</button>
           <button data-mtog="${i.id}" style="padding:4px;display:grid;place-items:center" title="${isOn?'ปิดขาย':'เปิดขาย'}">
             <span class="sw ${isOn?'on':''}"></span>
@@ -1667,6 +1898,7 @@ const SH={
       }).join('')}</div>
       <button class="wide go" data-close-sheet="1" style="margin:16px">เสร็จ</button>`)},
   shop(){ return wrap(`<div class="card" style="margin-top:16px">
+      <div class="li"><button data-sheet2="additem" style="width:100%;text-align:left;font-weight:500;color:var(--ready)">+ เพิ่มเมนูใหม่</button></div>
       <div class="li"><button data-sheet2="menu" style="width:100%;text-align:left">แก้เมนูวันนี้</button></div>
       <div class="li"><button data-sheet2="close" style="width:100%;text-align:left;color:var(--pause)">ปิดร้าน · นับเงิน</button></div>
     </div><button class="wide" data-close-sheet="1" style="margin:8px 16px 16px">ยกเลิก</button>`)},
@@ -1738,7 +1970,7 @@ document.addEventListener('click',e=>{
     return;
   }
 
-  const t=e.target.closest('[data-k],[data-go],[data-sell],[data-reenable],[data-note],[data-tf],[data-sheet],[data-sheet2],[data-close-sheet],[data-backdrop],[data-doopen],[data-float],[data-floatx],[data-mtog],[data-mprice],[data-doclose],[data-store],[data-addstore],[data-tick],[data-packs],[data-price],[data-promo],[data-addgoods],[data-delgoods],[data-savebuy],[data-iprice],[data-photo],[data-pin],[data-forget],[data-sbsave],[data-export],[data-lock],[data-void],[data-day],[data-more],[data-custdone],[data-custremove],[data-custminus],[data-custplus],[data-reedit],[data-purday],[data-buytab],[data-delpur]');
+  const t=e.target.closest('[data-k],[data-go],[data-sell],[data-reenable],[data-note],[data-tf],[data-sheet],[data-sheet2],[data-close-sheet],[data-backdrop],[data-doopen],[data-float],[data-floatx],[data-mtog],[data-mprice],[data-doclose],[data-store],[data-addstore],[data-tick],[data-packs],[data-price],[data-promo],[data-addgoods],[data-delgoods],[data-savebuy],[data-iprice],[data-photo],[data-pin],[data-forget],[data-sbsave],[data-export],[data-lock],[data-void],[data-day],[data-more],[data-custdone],[data-custremove],[data-custminus],[data-custplus],[data-reedit],[data-purday],[data-buytab],[data-delpur],[data-catfilter],[data-catopt],[data-choosephoto],[data-doadditem]');
   if(!t) return; const d=t.dataset;
 
   if(d.k!==undefined){ if(d.k==='x') buf=buf.slice(0,-1); else if(buf.length<4) buf+=d.k;
@@ -1751,6 +1983,32 @@ document.addEventListener('click',e=>{
     return; }
   if(d.sheet){ open(d.sheet); return; }
   if(d.sheet2){ open(d.sheet2); return; }
+  if(d.catfilter){ sellCatFilter = d.catfilter; paint(); return; }
+  if(d.catopt){
+    document.querySelectorAll('.cat-opt').forEach(el=>el.classList.remove('on'));
+    t.classList.add('on');
+    return;
+  }
+  if(d.choosephoto){
+    const f=document.createElement('input'); f.type='file'; f.accept='image/*';
+    f.onchange=()=>{ const r=new FileReader();
+      r.onload=()=>{
+        const im=new Image(); im.onload=()=>{
+          const c=document.createElement('canvas');
+          const S2=280; c.width=c.height=S2; const x=c.getContext('2d');
+          const k=Math.max(S2/im.width,S2/im.height);
+          x.drawImage(im,(S2-im.width*k)/2,(S2-im.height*k)/2,im.width*k,im.height*k);
+          _newMenuPhotoTemp=c.toDataURL('image/webp',.72);
+          const prev=$('#new_photo_prev');
+          if(prev) prev.innerHTML=`<img src="${_newMenuPhotoTemp}" style="width:100%;height:100%;object-fit:cover">`;
+        };
+        im.src=r.result;
+      };
+      r.readAsDataURL(f.files[0]);
+    };
+    f.click(); return;
+  }
+  if(d.doadditem){ addNewMenuItem(); return; }
 
   if(d.day){ openDay(d.day); return; }
   if(d.more){ loadHist(true); return; }
