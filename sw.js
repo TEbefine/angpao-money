@@ -1,4 +1,4 @@
-const V='rap-v28';
+const V='rap-v29';
 const CORE=['./','./index.html','./manifest.webmanifest','./icon.webp','./apple-touch-icon.png','./icon-192.png','./icon-512.png'];
 self.addEventListener('install',e=>{
   e.waitUntil(caches.open(V).then(c=>c.addAll(CORE)).then(()=>self.skipWaiting()));
@@ -9,7 +9,7 @@ self.addEventListener('activate',e=>{
 });
 self.addEventListener('fetch',e=>{
   const u=new URL(e.request.url);
-  if(u.pathname.includes('/rest/v1/')) return;          // ห้ามแคช Supabase
+  if(u.pathname.includes('/rest/v1/') || u.hostname.includes('googleapis.com') || u.hostname.includes('firebaseio.com')) return; // ห้ามแคช API Database
   e.respondWith(
     caches.match(e.request).then(hit=>{                  // cache-first = เปิดติดทันที
       const net=fetch(e.request).then(r=>{

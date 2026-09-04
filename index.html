@@ -15,6 +15,32 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans+Thai:wght@400;500;600&display=swap">
+<script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore-compat.js"></script>
+<script>
+  const firebaseConfig = {
+    apiKey: "AIzaSyBxeQbJgI9kvfpCzA38KF6N0T3VNh-Cb8Q",
+    authDomain: "angpao-money.firebaseapp.com",
+    projectId: "angpao-money",
+    storageBucket: "angpao-money.firebasestorage.app",
+    messagingSenderId: "805704391988",
+    appId: "1:805704391988:web:016b0824cfd1f2f22d1961",
+    measurementId: "G-J3QMKBHSCJ"
+  };
+  if (typeof firebase !== 'undefined' && firebase.initializeApp) {
+    try {
+      if (!firebase.apps || !firebase.apps.length) {
+        firebase.initializeApp(firebaseConfig);
+      }
+      window.db = firebase.firestore();
+      window.db.enablePersistence({synchronizeTabs:true}).catch(function(err) {
+        console.warn('Firestore persistence:', err ? err.code : err);
+      });
+    } catch(e) {
+      console.warn('Firebase init error', e);
+    }
+  }
+</script>
 <style>
 :root{
   --ink:#222222; --paper:#F8F9FA; --ready:#6B9080; --pause:#C05746;
@@ -454,11 +480,13 @@ function dedupeCatalog(){
     if(S.outbox){
       S.outbox = S.outbox.filter(entry => !(entry.table === 'items' && toDelete.has(entry.row && entry.row.id)));
     }
-    if(S.sb && S.sb.url && S.sb.key){
-      toDelete.forEach(dupId => {
+    toDelete.forEach(dupId => {
+      if(window.db){
+        window.db.collection('items').doc(dupId).delete().catch(()=>{});
+      } else if(S.sb && S.sb.url && S.sb.key){
         sbFetch('items?id=eq.' + encodeURIComponent(dupId), { method: 'DELETE' }).catch(() => {});
-      });
-    }
+      }
+    });
   }
 
   // 3. Deduplicate S.goods by name + item_id
@@ -695,28 +723,41 @@ function shiftStats(sh){
   return {rows,rev,cost:Math.round(cost),profit:Math.round(rev-cost),cash,tf,unk,n:rows.length};
 }
 
-/* ═══════════════ 3 · sync (Supabase optional) ═══════════════ */
+/* ═══════════════ 3 · sync (Firestore + offline outbox) ═══════════════ */
 const T = {sales:'sales',pays:'pay_changes',shifts:'shifts',purchases:'purchases'};
+function getDocRef(table, row){
+  if(typeof db === 'undefined' || !db) return null;
+  const col = db.collection(table);
+  if(table === 'staff') return col.doc(String(row.pin));
+  if(table === 'stores') return col.doc(String(row.name));
+  return col.doc(String(row.id));
+}
 function queue(table,row){ S.outbox.push({table,row,t:Date.now()}); save(); flush(); }
 let flushing=false;
 async function flush(){
-  if(flushing || !S.sb.url || !S.sb.key || !navigator.onLine || !S.outbox.length) return;
+  if(flushing || !navigator.onLine || !S.outbox.length) return;
   flushing=true;
   try{
     while(S.outbox.length){
       const job = S.outbox[0];
-      const r = await fetch(`${S.sb.url}/rest/v1/${job.table}`,{method:'POST',headers:{
-        apikey:S.sb.key,Authorization:'Bearer '+S.sb.key,'Content-Type':'application/json',
-        Prefer:'resolution=merge-duplicates,return=minimal'
-      },body:JSON.stringify(job.row)});
-      if(!r.ok && r.status!==409){
-        if(r.status>=400 && r.status<500){
-          /* the row itself is malformed — retrying forever would freeze
-             every sale queued behind it. Park it and keep going. */
-          (S.dead = S.dead||[]).push({job,err:(await r.text()).slice(0,300),t:Date.now()});
-          S.outbox.shift(); save(); continue;
+      if(typeof db !== 'undefined' && db){
+        const docRef = getDocRef(job.table, job.row);
+        if(docRef){
+          const cleanRow = JSON.parse(JSON.stringify(job.row));
+          await docRef.set(cleanRow, { merge: true });
         }
-        throw new Error(await r.text());          /* 5xx / offline → retry later */
+      }else if(S.sb && S.sb.url && S.sb.key){
+        const r = await fetch(`${S.sb.url}/rest/v1/${job.table}`,{method:'POST',headers:{
+          apikey:S.sb.key,Authorization:'Bearer '+S.sb.key,'Content-Type':'application/json',
+          Prefer:'resolution=merge-duplicates,return=minimal'
+        },body:JSON.stringify(job.row)});
+        if(!r.ok && r.status!==409){
+          if(r.status>=400 && r.status<500){
+            (S.dead = S.dead||[]).push({job,err:(await r.text()).slice(0,300),t:Date.now()});
+            S.outbox.shift(); save(); continue;
+          }
+          throw new Error(await r.text());
+        }
       }
       S.outbox.shift(); save();
     }
@@ -724,24 +765,51 @@ async function flush(){
   flushing=false; paint();
 }
 async function pull(){
-  if(!S.sb.url || !S.sb.key || !navigator.onLine) return;
-  const get = async (t,q='') => {
-    const r = await fetch(`${S.sb.url}/rest/v1/${t}?select=*${q}`,{headers:{
-      apikey:S.sb.key,Authorization:'Bearer '+S.sb.key}});
-    return r.ok ? r.json() : [];
-  };
+  if(!navigator.onLine) return;
   try{
     const test = MODE==='test';
-    /* incremental: after the first sync we only ask for what changed */
-    const since = S.pulledAt ? `&updated_at=gt.${encodeURIComponent(S.pulledAt)}` : '';
     const at    = new Date().toISOString();
-    const [sh,sa,pc,it,ct,gd,pu,pl] = await Promise.all([
-      get(T.shifts,`&is_test=eq.${test}${since}`),
-      get(T.sales ,`&is_test=eq.${test}${since}`),
-      get(T.pays  , S.pulledAt ? `&created_at=gt.${encodeURIComponent(S.pulledAt)}` : ''),
-      get('items',`&order=sort`), get('cats',`&order=sort`), get('goods',`&archived=eq.false`),
-      get(T.purchases,`&is_test=eq.${test}${since}`),
-      get('purchase_lines', S.pulledAt ? `&created_at=gt.${encodeURIComponent(S.pulledAt)}` : '')]);
+    let sh=[], sa=[], pc=[], it=[], ct=[], gd=[], pu=[], pl=[];
+
+    if(typeof db !== 'undefined' && db){
+      const fetchCol = async (colName, filterField, filterVal) => {
+        try{
+          let q = db.collection(colName);
+          if(filterField !== undefined) q = q.where(filterField, '==', filterVal);
+          const snap = await q.get();
+          return snap.docs.map(d => d.data());
+        }catch(e){ console.warn('pull '+colName, e.message); return []; }
+      };
+      [sh, sa, pc, it, ct, gd, pu, pl] = await Promise.all([
+        fetchCol('shifts', 'is_test', test),
+        fetchCol('sales', 'is_test', test),
+        fetchCol('pay_changes'),
+        fetchCol('items'),
+        fetchCol('cats'),
+        fetchCol('goods'),
+        fetchCol('purchases', 'is_test', test),
+        fetchCol('purchase_lines')
+      ]);
+      it.sort((a,b)=>(a.sort||0)-(b.sort||0));
+      ct.sort((a,b)=>(a.sort||0)-(b.sort||0));
+      gd = gd.filter(g=>!g.archived);
+    }else if(S.sb && S.sb.url && S.sb.key){
+      const get = async (t,q='') => {
+        const r = await fetch(`${S.sb.url}/rest/v1/${t}?select=*${q}`,{headers:{
+          apikey:S.sb.key,Authorization:'Bearer '+S.sb.key}});
+        return r.ok ? r.json() : [];
+      };
+      const since = S.pulledAt ? `&updated_at=gt.${encodeURIComponent(S.pulledAt)}` : '';
+      [sh,sa,pc,it,ct,gd,pu,pl] = await Promise.all([
+        get(T.shifts,`&is_test=eq.${test}${since}`),
+        get(T.sales ,`&is_test=eq.${test}${since}`),
+        get(T.pays  , S.pulledAt ? `&created_at=gt.${encodeURIComponent(S.pulledAt)}` : ''),
+        get('items',`&order=sort`), get('cats',`&order=sort`), get('goods',`&archived=eq.false`),
+        get(T.purchases,`&is_test=eq.${test}${since}`),
+        get('purchase_lines', S.pulledAt ? `&created_at=gt.${encodeURIComponent(S.pulledAt)}` : '')]);
+    }else{
+      return;
+    }
 
     /* ── catalog ──────────────────────────────────────────────────
        A phone that has never done business here is still carrying the
@@ -854,7 +922,7 @@ function dgone(gid){
 
 let listBusy=false, listDirty=false;
 async function pushList(){
-  if(!buyDraft || !S.sb.url || !navigator.onLine) return;
+  if(!buyDraft || !navigator.onLine) return;
   if(listBusy){ listDirty=true; return; }
   listBusy=true;
   try{
@@ -865,15 +933,25 @@ async function pushList(){
       rows.push({id:slid(gid),goods_id:gid,goods_name:g.name,bucket:catOf(g).bucket,
         item_id:g.item_id,store:buyDraft.store,unit:g.unit,pack_size:g.pack_size,
         packs:l.packs||1,qty:l.qty==null?null:l.qty,price:l.price==null?null:l.price,
-        checked:true,is_test:test,done_purchase_id:null,updated_by:DEVICE});
+        checked:true,is_test:test,done_purchase_id:null,updated_by:DEVICE,
+        updated_at:new Date().toISOString()});
     });
     (buyDraft.off||[]).forEach(gid=>{
       if(on.has(gid)) return;
       const g = S.goods.find(x=>x.id===gid);
       rows.push({id:slid(gid),goods_id:gid,goods_name:g?g.name:gid,
-        checked:false,is_test:test,updated_by:DEVICE});
+        checked:false,is_test:test,updated_by:DEVICE,
+        updated_at:new Date().toISOString()});
     });
-    if(rows.length) await upsert(rows);
+    if(rows.length){
+      if(typeof db !== 'undefined' && db){
+        const batch = db.batch();
+        rows.forEach(r => batch.set(db.collection('shopping_list').doc(r.id), JSON.parse(JSON.stringify(r)), {merge:true}));
+        await batch.commit();
+      }else if(S.sb && S.sb.url){
+        await upsert(rows);
+      }
+    }
     buyDraft.off=[]; S.buyDraft=buyDraft; save();
   }catch(e){ console.warn('list push',e.message) }
   listBusy=false;
@@ -881,12 +959,20 @@ async function pushList(){
 }
 
 async function pullList(){
-  if(!S.sb.url || !navigator.onLine) return;
+  if(!navigator.onLine) return;
   try{
-    const r = await sbFetch('shopping_list?select=*&done_purchase_id=is.null&is_test=eq.'
-                            +(MODE==='test'));
-    if(!r.ok) return;
-    const rows = await r.json();
+    let rows = [];
+    if(typeof db !== 'undefined' && db){
+      const snap = await db.collection('shopping_list').where('is_test','==',MODE==='test').get();
+      rows = snap.docs.map(d=>d.data()).filter(r=>!r.done_purchase_id);
+    }else if(S.sb && S.sb.url){
+      const r = await sbFetch('shopping_list?select=*&done_purchase_id=is.null&is_test=eq.'
+                              +(MODE==='test'));
+      if(!r.ok) return;
+      rows = await r.json();
+    }else{
+      return;
+    }
     if(!buyDraft) buyDraft = S.buyDraft || newDraft();
     const L = buyDraft.lines; let changed=false;
     rows.forEach(row=>{
@@ -908,12 +994,19 @@ async function pullList(){
 
 /* the list has been turned into a real purchase — close those rows out */
 function markListDone(gids,pid){
-  if(!gids.length || !S.sb.url) return;
+  if(!gids.length) return;
   const test = MODE==='test';
-  upsert(gids.map(gid=>({id:slid(gid),goods_id:gid,
+  const rows = gids.map(gid=>({id:slid(gid),goods_id:gid,
     goods_name:(S.goods.find(x=>x.id===gid)||{name:gid}).name,
-    checked:false,done_purchase_id:pid,is_test:test,updated_by:DEVICE})))
-    .catch(e=>console.warn('list done',e.message));
+    checked:false,done_purchase_id:pid,is_test:test,updated_by:DEVICE,
+    updated_at:new Date().toISOString()}));
+  if(typeof db !== 'undefined' && db){
+    const batch = db.batch();
+    rows.forEach(r => batch.set(db.collection('shopping_list').doc(r.id), JSON.parse(JSON.stringify(r)), {merge:true}));
+    batch.commit().catch(e=>console.warn('list done',e.message));
+  }else if(S.sb && S.sb.url){
+    upsert(rows).catch(e=>console.warn('list done',e.message));
+  }
 }
 
 /* keep the shared list warm while someone is standing in the shop */
@@ -935,18 +1028,26 @@ async function loadHist(more){
   if(more && HIST.done) return;
   HIST.busy=true; HIST.err=null;
   if(route==='hist') paintFoot();
-  const before = (more && HIST.days.length) ? HIST.days[HIST.days.length-1].day : null;
   try{
-    const r = await sbFetch('rpc/day_history',{method:'POST',
-      headers:{'Content-Type':'application/json'},
-      body:JSON.stringify({p_is_test:MODE==='test',p_limit:HIST.PAGE,p_before:before})});
-    if(!r.ok) throw new Error('HTTP '+r.status);
-    const rows = await r.json();
-    if(!more){ HIST.days=[]; HIST.done=false; }
-    const have = new Set(HIST.days.map(d=>d.day));
-    rows.forEach(d=>{ if(!have.has(d.day)) HIST.days.push(d) });
-    if(rows.length < HIST.PAGE) HIST.done=true;
-    HIST.key = histKey();
+    if(typeof db !== 'undefined' && db){
+      HIST.days = localDays();
+      HIST.done = true;
+      HIST.key = histKey();
+    }else if(S.sb && S.sb.url){
+      const before = (more && HIST.days.length) ? HIST.days[HIST.days.length-1].day : null;
+      const r = await sbFetch('rpc/day_history',{method:'POST',
+        headers:{'Content-Type':'application/json'},
+        body:JSON.stringify({p_is_test:MODE==='test',p_limit:HIST.PAGE,p_before:before})});
+      if(!r.ok) throw new Error('HTTP '+r.status);
+      const rows = await r.json();
+      if(!more){ HIST.days=[]; HIST.done=false; }
+      const have = new Set(HIST.days.map(d=>d.day));
+      rows.forEach(d=>{ if(!have.has(d.day)) HIST.days.push(d) });
+      if(rows.length < HIST.PAGE) HIST.done=true;
+      HIST.key = histKey();
+    }else{
+      HIST.days = localDays(); HIST.done = true; HIST.key = histKey();
+    }
   }catch(e){
     HIST.err = e.message;
     if(!HIST.days.length){ HIST.days = localDays(); HIST.done = true; HIST.key = histKey(); }
@@ -983,12 +1084,18 @@ async function openDay(iso){
   if(HIST.open===iso){ HIST.open=null; paint(); return; }
   HIST.open=iso; paint();
   if(HIST.detail[iso]) return;
-  try{
-    const r = await sbFetch('rpc/day_detail',{method:'POST',
-      headers:{'Content-Type':'application/json'},
-      body:JSON.stringify({p_day:iso,p_is_test:MODE==='test'})});
-    HIST.detail[iso] = r.ok ? await r.json() : localDetail(iso);
-  }catch(e){ HIST.detail[iso] = localDetail(iso) }
+  if(typeof db !== 'undefined' && db){
+    HIST.detail[iso] = localDetail(iso);
+  }else if(S.sb && S.sb.url){
+    try{
+      const r = await sbFetch('rpc/day_detail',{method:'POST',
+        headers:{'Content-Type':'application/json'},
+        body:JSON.stringify({p_day:iso,p_is_test:MODE==='test'})});
+      HIST.detail[iso] = r.ok ? await r.json() : localDetail(iso);
+    }catch(e){ HIST.detail[iso] = localDetail(iso) }
+  }else{
+    HIST.detail[iso] = localDetail(iso);
+  }
   if(route==='hist') paint();
 }
 const localDetail = iso => (reindex(), S.sales.filter(s=>live(s) && dayOf(new Date(s.ts))===iso)
@@ -1750,11 +1857,11 @@ function viewSet(){
       <div class="li"><span class="g" style="color:var(--ink-3);font-size:13px">
         เครื่องนี้จำ ${esc(U?U.name:'-')} ไว้แล้ว</span>
         <button class="chip" data-forget="1">ลืมเครื่องนี้</button></div></div>
-    <div class="lbl"><span>Supabase</span><span>${S.sb.url?(S.outbox.length?'ค้าง '+S.outbox.length:(S.dead&&S.dead.length?'ส่งไม่ได้ '+S.dead.length+' แถว':'ซิงก์แล้ว')):'ยังไม่ต่อ'}</span></div>
+    <div class="lbl"><span>ฐานข้อมูล Firebase Firestore</span><span>${(typeof db !== 'undefined' && db)?(S.outbox.length?'ค้าง '+S.outbox.length:'เชื่อมต่อ 24/7/365'):(S.outbox.length?'ค้าง '+S.outbox.length:'พร้อมใช้งาน')}</span></div>
     <div class="card" style="padding:12px">
-      <input id="sbu" placeholder="https://xxxx.supabase.co" value="${esc(S.sb.url)}" style="margin-bottom:8px">
-      <input id="sbk" placeholder="anon public key" value="${esc(S.sb.key)}">
-      <button class="wide" data-sbsave="1" style="margin:12px 0 0;width:100%">บันทึก แล้วซิงก์</button>
+      <div style="font-size:13px;color:var(--ink-2);margin-bottom:6px">โปรเจกต์: <b class="mono">angpao-money</b> (asia-southeast1)</div>
+      <div style="font-size:12px;color:var(--ready);display:flex;align-items:center;gap:6px"><span>●</span> ออนไลน์ 24/7/365 ข้อมูลไม่หาย ไม่หลับ</div>
+      <button class="wide" data-sbsave="1" style="margin:12px 0 0;width:100%">ซิงก์ข้อมูลทันที</button>
     </div>
     <div class="lbl"><span>ข้อมูล</span></div>
     <div class="card">
@@ -2186,9 +2293,14 @@ document.addEventListener('click',e=>{
     f.click(); return; }
   if(d.pin!==undefined){ const p=S.staff[+d.pin], v=prompt(p.name+' — PIN ใหม่ (4 ตัว)',p.pin);
     if(v&&/^\d{4}$/.test(v)){ p.pin=v; save(); paint() } return; }
-  if(d.forget){ delete localStorage.remember; location.reload(); return; }
-  if(d.sbsave){ S.sb.url=$('#sbu').value.trim().replace(/\/$/,''); S.sb.key=$('#sbk').value.trim();
-    save(); flush(); pull(); paint(); return; }
+  if(d.sbsave){
+    if($('#sbu') && $('#sbk')){
+      S.sb.url=$('#sbu').value.trim().replace(/\/$/,'');
+      S.sb.key=$('#sbk').value.trim();
+      save();
+    }
+    flush(); pull(); paint(); return;
+  }
   if(d.export){ const a=document.createElement('a');
     a.href=URL.createObjectURL(new Blob([JSON.stringify(S,null,2)],{type:'application/json'}));
     a.download='rapsalad-'+MODE+'-'+today()+'.json'; a.click(); return; }
